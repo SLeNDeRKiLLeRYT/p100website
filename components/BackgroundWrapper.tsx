@@ -4,12 +4,12 @@
 
 import { usePathname } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
-import Image from 'next/image'; // Import the Next.js Image component
+import Image from 'next/image';
 
 interface BackgroundWrapperProps {
   children: ReactNode;
-  characterId?: string; // For character-specific pages
-  backgroundUrl?: string; // Direct background URL override
+  characterId?: string;
+  backgroundUrl?: string;
 }
 
 const defaultBackgrounds = {
@@ -25,13 +25,13 @@ export default function BackgroundWrapper({ children, characterId, backgroundUrl
   const [background, setBackground] = useState<string>('');
 
   useEffect(() => {
-    // If we have a direct background URL, use it immediately
+    // If we have a direct background URL from the database, use it immediately
     if (backgroundUrl) {
       setBackground(backgroundUrl);
       return;
     }
 
-    // Determine which default background to use based on the current path
+    // Otherwise, determine which default background to use based on the current path
     const basePath = pathname.startsWith('/killers') ? '/killers' :
                      pathname.startsWith('/survivors') ? '/survivors' :
                      pathname === '/credits' ? '/credits' :
@@ -42,26 +42,37 @@ export default function BackgroundWrapper({ children, characterId, backgroundUrl
   }, [pathname, characterId, backgroundUrl]);
 
   return (
-    <div className="relative min-h-screen">
-      {/* Background image layer using Next/Image */}
-      {background && (
-        <Image
-          src={background}
-          alt="Page background"
-          fill
-          className="object-cover object-center -z-10"
-          style={{ opacity: 0.5 }}
-          quality={80} // Adjust quality for performance
-          priority // Load background images quickly
-          sizes="100vw" // The image will span the full viewport width
-        />
-      )}
+    // Use a React Fragment as the wrapper is no longer a layout container.
+    // It just provides the background and renders the children on top.
+    <>
+      {/* 
+        This div is now FIXED to the viewport. It covers the entire screen (inset-0)
+        and sits behind all other content (-z-10). It does NOT scroll with the page.
+        This ensures the background image covers the screen perfectly without zooming
+        in, regardless of the page content's length.
+      */}
+      <div className="fixed inset-0 -z-10">
+        {background && (
+          <Image
+            src={background}
+            alt="Page background"
+            fill
+            className="object-cover object-center"
+            style={{ opacity: 0.5 }}
+            quality={80} // Adjust quality for performance
+            priority // Load background images quickly
+            sizes="100vw" // The image will span the full viewport width
+          />
+        )}
+        {/* The dark overlay is now ABSOLUTE within the FIXED container, achieving the same effect. */}
+        <div className="absolute inset-0 bg-black/50" />
+      </div>
 
-      {/* Dark overlay for better text readability */}
-      <div className="fixed inset-0 z-[-1] bg-black/50" />
-
-      {/* Page Content */}
+      {/* 
+        The page content is rendered here. It will have its own scrolling behavior
+        and will appear ON TOP of the fixed background.
+      */}
       {children}
-    </div>
+    </>
   );
 }
