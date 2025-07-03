@@ -1,0 +1,323 @@
+ The top of the site starts with a mobile warning overlay and a navigation bar. It shows a WARNING
+ message advising desktop view, with a button “I UNDERSTAND” (to dismiss it) . Below that is the
+ main title “The Ultimate P100 List Library.” and links for Killers, Survivors, and Credits . The home
+ content begins: 
+1
+ • 
+• 
+• 
+• 
+3
+ 4
+ 2
+ Introduction: “Hello! Welcome to the Ultimate P100 List Library, created by SLeNDeR_KiLLeR.” It
+ explains that you can click Killers or Survivors to see the full roster lists . 
+P100 Submission Link: There is a bold link “P100” (in a list) prompting users to add a P100. 
+FAQ: A FAQ section with Q&A, e.g. “When was this website created?” (answer: end of 2024) and
+ “Where can I find the credits?” (answer: art credits are below each image or in the credits page)
+ . 
+Submission Instructions: A section titled “READ BEFORE SUBMITTING:” states that the owner
+ accepts P100 submissions via a Google Form or Discord
+ 5
+ . It lists requirements (e.g.
+ screenshots must be from the current lobby) and shows example screenshots (with labels
+ “Image”). It also notes: 
+“The google form, and the discord server, to submit your P100(s)”
+ 3
+ 6
+ and advises patience after submission. All visible text (buttons, headings, instructions) on the home
+ page is as cited above .
+ 5
+ Killers Section
+ 6
+ Clicking Killers (or scrolling) brings up the “Welcome to the P100 Killers kingdom” section . Its
+ content: 
+• 
+• 
+7
+ 7
+ A heading “Welcome to the P100 Killers kingdom” . 
+Instruction text: “You can find each list’s original creator on the credits page. Click on any killer
+ icon to see the current list of P100s...” . 
+8
+ • 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+A list of killer icons: each icon is labeled with a killer name. The visible names of all killers listed
+ are: 
+Trapper 
+Wraith 
+Billy 
+Nurse 
+Myers 
+Hag 
+Doctor 
+bubba 
+Huntress 
+Freddy Krueger 
+1
+Pig 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+Clown 
+Spirit 
+The Legion 
+Plague 
+GhostFace 
+Demogorgon 
+Oni 
+DeathSlinger 
+Pyramid Head 
+Blight 
+Twins 
+Trickster 
+nEMESIS 
+PinHead 
+artist 
+sadako 
+dredge 
+wesker 
+knight 
+skull merchant 
+singularity 
+xenomorph 
+9
+ These names (from Trapper through Xenomorph) appear under the killer icons . (Each name is
+ shown as visible text under its icon.) 
+10
+ In summary, the Killers section is one long page segment containing the heading and list above, with
+ each killer name as listed and clickable. 
+Survivors Section
+ Clicking Survivors (or scrolling) leads to the “Welcome to the P100 Survivors kingdom” section .
+ This section includes: 
+11
+ • 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+11
+ Heading: “Welcome to the P100 Survivors kingdom” . 
+Instruction: “You can find each list’s original creator on the credits page. Click on any survivor
+ icon to see the current list of P100s. Legendary cosmetics are considered the same as the base
+ survivor…” . 
+12
+ A grid of survivor icons, each labeled with a name. The visible survivor names are: 
+Dwight 
+Meg 
+Claudette 
+Jake 
+Nea 
+Bill 
+Laurie 
+2
+ace 
+feng 
+david 
+Quentin 
+Tapp 
+Kate 
+Adam Francis 
+Jeff 
+Jane 
+Ashley 
+Nancy 
+steve 
+YUI 
+Zarina 
+Cheryl 
+Felix Richter 
+Elodie 
+Yun-Jin 
+jill 
+leon 
+mikaela 
+Jonah 
+yoichi 
+haddie 
+ada 
+rebecca 
+vittorio 
+thalita 
+renato 
+gabriel soma 
+nicolas cage 
+ellen ripley 
+alan wake 
+sable ward 
+Aestri/Baermar 
+lara croft 
+trevor 
+taurie cain 
+Orela Rose 
+These names are all visible under the survivor icons . (For example, Dwight, Meg, Claudette, Jake,
+ Nea, Bill appear at the top of the list , and names like Gabriel Soma, Nicolas Cage, Ellen Ripley
+ appear near the bottom .) 
+Thus the Survivors section mirrors the Killers section: a heading, description, and a list of all survivor
+ characters as text under icons. 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+13 14
+ 13
+ 14
+ 3
+Killer P100 Pages (Example)
+ Each killer icon links to a P100 page for that character. For example, the P100 Trapper page has: 
+• 
+• 
+• 
+• 
+18
+ 15
+ 16
+ A sub-heading “P100 TRAPPER” (an H3 heading) . 
+An image credit line “Art by: Emilu” above the content . 
+Introductory text: “Welcome on the P100 Trapper page. Here, you will find the list, as well as
+ multiple artwork/renders made by wonderful artists. Click on the image to go to the artist’s page
+ directly. You can also see their name below each fanart. Reminder that it isn’t ordered! You can
+ f
+ ind links at the bottom of the page to contact me…” . 
+The list of players: It shows “The P100 Trapper list starts here:” and then a bullet list of player
+ names, e.g. PallyStream, Mikaelanator, NativeManiax, etc.
+ 17
+ plain text.) 
+18
+ . (All names in that list are visible as
+ In general, each killer’s P100 page follows this same pattern: a heading “P100 [KillerName]”, optional
+ artist credit (“Art by …”), a welcome paragraph, and then “The P100 [KillerName] list starts here:”
+ followed by a bullet list of many player names. We have examined Trapper’s page as an example
+ . Other killer pages (Wraith, Hillbilly, Nurse, etc.) have the same structure with their respective
+ names and lists. 
+Survivor P100 Pages (Example)
+ 19
+ Similarly, each survivor icon links to a P100 page for that survivor. For example, the P100 Dwight page
+ includes: 
+• 
+• 
+• 
+20
+ A heading “P100 dwight” . 
+Intro text: “Welcome on the P100 Dwight page. Here, you will find the list, as well as multiple
+ artwork/renders made by wonderful artists. Click on the image to go to the artist’s page directly.
+ You can also see their name below each fanart. Reminder that it isn’t ordered! You can find links
+ at the bottom of the page to contact me…” . 
+The P100 list: It states “The P100 Dwight list starts here:” and then lists dozens of player names
+ (e.g. shogunthesebaals, Tre, Ryxn9001YT, … Ozi) as bullet items . 
+21
+ 21
+ 22
+ 23
+ All survivor P100 pages follow this format. In each case, the content consists of the heading (“P100
+ [Name]”), a short introduction with instructions, and then a bullet list of player names. For brevity we
+ cite Dwight’s page as representative , noting that every character (both killers and survivors) has
+ a similar P100 page. 
+22
+ Credits Page
+ The Credits section is at the bottom (linked via “Credits” in the nav). It contains: 
+• 
+• 
+• 
+24
+ A heading “CREDITS <3” . 
+A fanart image credit (e.g. “Art by zmpixie”)
+ 25
+ 26
+ and another image credit . 
+A welcome note from the creator: “Hello! Thank you for coming to the credits section. I, the one
+ who came up the idea of this website, and made it, am ~~steve~~ Slender. A variety streamer... I
+ was of course not alone on this. A lot of people, players, artists, and friends helped me. Even if I
+ was the one to write down the names... Everything you see... would not be there without them.”
+ This paragraph continues on about artists’ credits . 
+27
+ 4
+• 
+• 
+28
+ A thank-you list: The page lists individuals by name who helped with each character’s list (e.g.
+ “Witheringspark, for the Cheryl list; VeriHiHi, for the Leon list; YoichiBear, for the Yoichi list; …
+ Brandyn, for the Unknown list; etc.”) . 
+Social links: At the very bottom, it shows icons labeled “Discord server” and “X” (formerly
+ Twitter). The text says: “Links of my social networks, if you wish to contact me about anything on
+ this site:” followed by bullet icons for Discord and X . 
+29
+ 24
+ 28
+ In short, the Credits page is headed “CREDITS <3” and contains thank-you text and contributor names
+ as shown above
+ , plus links to the creator’s Discord and X accounts . 
+29
+ Navigation: The site uses anchor links for navigation. The top menu’s Home, Killers, Survivors, Credits
+ items scroll the page to the corresponding section. Each killer/survivor icon acts as a link (anchor) to
+ that character’s P100 section on the same page. All text (headings, instructions, names, buttons) on
+ each section/page is as described above and is cited from the site.

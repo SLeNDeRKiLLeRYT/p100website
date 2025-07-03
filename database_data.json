@@ -1,0 +1,317 @@
+[
+  {
+    "table_name": "artists",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "artists",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "artists",
+    "column_name": "url",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "artists",
+    "column_name": "platform",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "artists",
+    "column_name": "slug",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "artists",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "artists",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "id",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "name",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "image_url",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "order",
+    "data_type": "bigint",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "background_image_url",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "header_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "artist_urls",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "killers",
+    "column_name": "legacy_header_urls",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_players",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_players",
+    "column_name": "username",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_players",
+    "column_name": "killer_id",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_players",
+    "column_name": "survivor_id",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_players",
+    "column_name": "added_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_players",
+    "column_name": "p200",
+    "data_type": "boolean",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "username",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "killer_id",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "survivor_id",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "screenshot_url",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "status",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "rejection_reason",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "submitted_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "reviewed_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "reviewed_by",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "p100_submissions",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "id",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "name",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "image_url",
+    "data_type": "character varying",
+    "is_nullable": "NO",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "background_image_url",
+    "data_type": "character varying",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "order_num",
+    "data_type": "bigint",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "header_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "artist_urls",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  },
+  {
+    "table_name": "survivors",
+    "column_name": "legacy_header_urls",
+    "data_type": "ARRAY",
+    "is_nullable": "YES",
+    "character_maximum_length": null
+  }
+]
