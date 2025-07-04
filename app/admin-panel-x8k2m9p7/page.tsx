@@ -532,9 +532,23 @@ export default function AdminPage() {
   };
 
   const savePlayer = async (playerData: any) => {
+    // Add validation to ensure required fields are present
+    if (!playerData.username || !playerData.username.trim()) {
+        toast({ title: 'Validation Error', description: 'Username is required.', variant: 'destructive' });
+        return;
+    }
+    if (!playerData.killer_id && !playerData.survivor_id) {
+        toast({ title: 'Validation Error', description: 'A character must be selected.', variant: 'destructive' });
+        return;
+    }
+
     try {
       const supabase = createAdminClient();
       const { id, killers, survivors, ...updateData } = playerData;
+      
+      // Sanitize username before insert/update
+      updateData.username = sanitizeInput(updateData.username.trim());
+
       if (id && p100Players.find(p => p.id === id)) {
         await supabase.from('p100_players').update(updateData).eq('id', id).throwOnError();
       } else {
@@ -543,9 +557,9 @@ export default function AdminPage() {
       toast({ title: 'Success', description: 'Player saved successfully.' });
       await fetchP100Players();
       setEditingPlayer(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving player:', error);
-      toast({ title: 'Error', description: 'Failed to save player.', variant: 'destructive' });
+      toast({ title: 'Error', description: error.message || 'Failed to save player.', variant: 'destructive' });
     }
   };
 
@@ -1145,10 +1159,21 @@ export default function AdminPage() {
                     <div className="space-y-4">
                         <div><Label className="text-white">Username</Label><Input value={editingPlayer.username} onChange={(e) => setEditingPlayer({...editingPlayer, username: e.target.value})} className="bg-black border-red-600 text-white"/></div>
                         <div><Label className="text-white">Character</Label>
-                            <Select value={editingPlayer.killer_id || editingPlayer.survivor_id || ''} onValueChange={(value) => {
-                                const isKiller = !!allKillers.find(k => k.id === value);
-                                setEditingPlayer({...editingPlayer, killer_id: isKiller ? value : null, survivor_id: !isKiller ? value : null});
-                            }}>
+                            <Select 
+                                value={editingPlayer.killer_id || editingPlayer.survivor_id || ''} 
+                                onValueChange={(value) => {
+                                    // Check if the selected ID belongs to a killer
+                                    const isKiller = allKillers.some(k => k.id === value);
+                                    
+                                    // Update the state, setting the correct ID field (killer_id or survivor_id)
+                                    // and ensuring the other is null.
+                                    setEditingPlayer({
+                                        ...editingPlayer, 
+                                        killer_id: isKiller ? value : null, 
+                                        survivor_id: !isKiller ? value : null
+                                    });
+                                }}
+                            >
                                 <SelectTrigger className="bg-black border-red-600 text-white"><SelectValue placeholder="Select character"/></SelectTrigger>
                                 <SelectContent className="bg-black border-red-600">
                                     <SelectGroup>
