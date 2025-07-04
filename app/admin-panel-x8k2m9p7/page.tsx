@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, notFound } from 'next/navigation';
 import { createClient, createAdminClient, sanitizeInput, validateInput } from '@/lib/supabase-client';
 // You will need to export updateArtist from your service file
@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -35,15 +35,6 @@ interface Character {
   id: string;
   name: string;
   image_url: string;
-}
-
-interface NewCharacterForm {
-  name: string;
-  id: string;
-  image: File | null;
-  backgroundImage: File | null;
-  headerImage: File | null;
-  artistImages: File[];
 }
 
 interface StorageItem {
@@ -106,6 +97,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isPlayersLoading, setIsPlayersLoading] = useState(false);
 
   // Data States
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -123,6 +115,8 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<'all' | 'killer' | 'survivor'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [playerSearchTerm, setPlayerSearchTerm] = useState('');
+  const [playerSort, setPlayerSort] = useState<'added_at_desc' | 'added_at_asc' | 'username_asc' | 'username_desc' | 'character_asc' | 'character_desc'>('added_at_desc');
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string>('all');
 
   // Rate Limiting State
   const [loginAttempts, setLoginAttempts] = useState<LoginAttempts>({ count: 0, lastAttempt: 0, isLocked: false });
@@ -184,6 +178,19 @@ export default function AdminPage() {
     }
   }, []);
 
+  // Debounced effect to re-fetch players when filters change
+  useEffect(() => {
+      if (!isAuthenticated) return;
+      
+      const handler = setTimeout(() => {
+          fetchP100Players();
+      }, 300);
+
+      return () => {
+          clearTimeout(handler);
+      };
+  }, [playerSearchTerm, selectedCharacterId, playerSort, isAuthenticated]);
+
   // Lockout Timer
   useEffect(() => {
     if (lockoutTimeRemaining > 0) {
@@ -232,7 +239,6 @@ export default function AdminPage() {
       fetchCharacters(),
       fetchAllCharacters(),
       fetchArtists(),
-      fetchP100Players(),
       fetchStorageItems(selectedBucket)
     ]);
     setLoading(false);
@@ -259,8 +265,8 @@ export default function AdminPage() {
     try {
       const supabase = createClient();
       const [killersRes, survivorsRes] = await Promise.all([
-        supabase.from('killers').select('*').order('order'),
-        supabase.from('survivors').select('*').order('order_num')
+        supabase.from('killers').select('*').order('name'),
+        supabase.from('survivors').select('*').order('name')
       ]);
       if (killersRes.error) throw killersRes.error;
       if (survivorsRes.error) throw survivorsRes.error;
@@ -288,19 +294,50 @@ export default function AdminPage() {
   };
 
   const fetchP100Players = async () => {
+    if (!isAuthenticated) return;
+    setIsPlayersLoading(true);
+
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('p100_players')
-        .select('*, killers(name), survivors(name)')
-        .order('added_at', { ascending: false });
-      if (error) throw error;
-      setP100Players(data || []);
+        const supabase = createClient();
+        let query = supabase
+            .from('p100_players')
+            .select('*, killers(name), survivors(name)');
+
+        // Filter by search term
+        const searchTerm = playerSearchTerm.trim();
+        if (searchTerm) {
+            query = query.ilike('username', `%${searchTerm}%`);
+        }
+        
+        // Filter by specific character
+        if (selectedCharacterId !== 'all') {
+          const isKiller = allKillers.some(k => k.id === selectedCharacterId);
+          if (isKiller) {
+              query = query.eq('killer_id', selectedCharacterId);
+          } else {
+              query = query.eq('survivor_id', selectedCharacterId);
+          }
+        }
+        
+        // Apply sorting
+        if (playerSort === 'username_asc' || playerSort === 'username_desc') {
+            query = query.order('username', { ascending: playerSort === 'username_asc' });
+        } else {
+            // Default sort by date
+            query = query.order('added_at', { ascending: playerSort === 'added_at_asc' });
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        setP100Players(data || []);
     } catch (error) {
-      console.error('Error fetching P100 players:', error);
-      toast({ title: 'Error', description: 'Failed to fetch P100 players', variant: 'destructive' });
+        console.error('Error fetching P100 players:', error);
+        toast({ title: 'Error', description: 'Failed to fetch P100 players.', variant: 'destructive' });
+    } finally {
+        setIsPlayersLoading(false);
     }
   };
+
 
   const fetchStorageItems = async (bucket: string) => {
     setLoadingStorage(true);
@@ -752,6 +789,18 @@ export default function AdminPage() {
     return typeMatch && statusMatch;
   });
 
+  const sortedPlayers = useMemo(() => {
+    let players = [...p100Players];
+    if (playerSort === 'character_asc' || playerSort === 'character_desc') {
+        players.sort((a, b) => {
+            const nameA = a.killers?.name || a.survivors?.name || '';
+            const nameB = b.killers?.name || b.survivors?.name || '';
+            return playerSort === 'character_asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+        });
+    }
+    return players;
+  }, [p100Players, playerSort]);
+
   const filteredStorageItems = storageItems.filter(item => 
       item.path.toLowerCase().includes(filePickerSearchTerm.toLowerCase())
   );
@@ -909,19 +958,70 @@ export default function AdminPage() {
                     <h2 className="text-2xl font-bold text-white">P100 Players Database</h2>
                     <Button onClick={() => setEditingPlayer({ username: '', killer_id: null, survivor_id: null, p200: false })} className="bg-green-600 hover:bg-green-700">Add New Player</Button>
                 </div>
-                <div className="mb-4"><Input type="text" placeholder="Search players by username..." className="bg-black border-red-600 text-white w-full" value={playerSearchTerm} onChange={(e) => setPlayerSearchTerm(e.target.value)} /></div>
-                {loading ? <div className="text-white text-center py-8">Loading...</div> : (
-                    <div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader><TableBody>
-                        {p100Players.filter(p => p.username.toLowerCase().includes(playerSearchTerm.toLowerCase())).map((player) => (<TableRow key={player.id} className="border-red-600/30">
-                            <TableCell className="text-white">{player.username}</TableCell>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <Input 
+                        type="text" 
+                        placeholder="Search players by username..." 
+                        className="bg-black border-red-600 text-white md:col-span-1" 
+                        value={playerSearchTerm} 
+                        onChange={(e) => setPlayerSearchTerm(e.target.value)} 
+                    />
+                    <div className="md:col-span-1">
+                        <Select value={selectedCharacterId} onValueChange={setSelectedCharacterId}>
+                            <SelectTrigger className="bg-black border-red-600 text-white w-full">
+                                <SelectValue placeholder="Filter by character..." />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black border-red-600">
+                                <SelectItem value="all">All Characters</SelectItem>
+                                <SelectGroup>
+                                    <SelectLabel>Killers</SelectLabel>
+                                    {allKillers.map(k => <SelectItem key={k.id} value={k.id}>{k.name}</SelectItem>)}
+                                </SelectGroup>
+                                <SelectGroup>
+                                    <SelectLabel>Survivors</SelectLabel>
+                                    {allSurvivors.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                </SelectGroup>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="md:col-span-1">
+                        <Select value={playerSort} onValueChange={(value) => setPlayerSort(value as any)}>
+                            <SelectTrigger className="bg-black border-red-600 text-white w-full">
+                                <SelectValue placeholder="Select sort order" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-black border-red-600">
+                                <SelectItem value="added_at_desc">Newest First</SelectItem>
+                                <SelectItem value="added_at_asc">Oldest First</SelectItem>
+                                <SelectItem value="username_asc">Username (A-Z)</SelectItem>
+                                <SelectItem value="username_desc">Username (Z-A)</SelectItem>
+                                <SelectItem value="character_asc">Character (A-Z)</SelectItem>
+                                <SelectItem value="character_desc">Character (Z-A)</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <div className="overflow-x-auto relative rounded-lg border border-red-900/50">
+                    {isPlayersLoading && (
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-10">
+                            <div className="animate-spin rounded-full h-8 w-8 border-2 border-red-600 border-t-transparent"></div>
+                        </div>
+                    )}
+                    <Table>
+                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {sortedPlayers.length > 0 ? sortedPlayers.map((player) => (<TableRow key={player.id} className="border-red-600/30">
+                            <TableCell className="text-white font-medium">{player.username}</TableCell>
                             <TableCell className="text-gray-400">{player.killers?.name || player.survivors?.name}</TableCell>
                             <TableCell className="text-gray-400">{player.killer_id ? 'Killer' : 'Survivor'}</TableCell>
-                            <TableCell><span className={`px-2 py-1 rounded text-xs ${player.p200 ? 'bg-purple-600' : 'bg-gray-600'}`}>{player.p200 ? 'P200' : 'P100'}</span></TableCell>
+                            <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.p200 ? 'bg-purple-600' : 'bg-gray-600'}`}>{player.p200 ? 'P200' : 'P100'}</span></TableCell>
                             <TableCell className="text-gray-400">{new Date(player.added_at).toLocaleDateString()}</TableCell>
                             <TableCell><div className="flex gap-2"><Button onClick={() => setEditingPlayer(player)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deletePlayer(player.id)} disabled={deletingItem === player.id} size="sm" variant="destructive">{deletingItem === player.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
-                        </TableRow>))}
-                    </TableBody></Table></div>
-                )}
+                        </TableRow>)) : (
+                            <TableRow><TableCell colSpan={6} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                </div>
             </div>
           </TabsContent>
 
@@ -1051,8 +1151,14 @@ export default function AdminPage() {
                             }}>
                                 <SelectTrigger className="bg-black border-red-600 text-white"><SelectValue placeholder="Select character"/></SelectTrigger>
                                 <SelectContent className="bg-black border-red-600">
-                                    {allKillers.map(k => <SelectItem key={k.id} value={k.id}>Killer: {k.name}</SelectItem>)}
-                                    {allSurvivors.map(s => <SelectItem key={s.id} value={s.id}>Survivor: {s.name}</SelectItem>)}
+                                    <SelectGroup>
+                                        <SelectLabel>Killers</SelectLabel>
+                                        {allKillers.map(k => <SelectItem key={k.id} value={k.id}>{k.name}</SelectItem>)}
+                                    </SelectGroup>
+                                    <SelectGroup>
+                                        <SelectLabel>Survivors</SelectLabel>
+                                        {allSurvivors.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                    </SelectGroup>
                                 </SelectContent>
                             </Select>
                         </div>
