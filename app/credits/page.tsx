@@ -23,7 +23,7 @@ export default function CreditsPage() {
             >
               <div className="relative h-72 border border-gray-700 overflow-hidden">
                 <Image
-                  src="/Art by Emilu.png"
+                  src="https://ddejzyoxrbccpickqakz.supabase.co/storage/v1/object/public/artworks//Art%20by%20Emilu.png"
                   alt="Credits artwork by Emilu"
                   fill
                   className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
