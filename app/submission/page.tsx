@@ -261,10 +261,10 @@ export default function SubmissionPage() {
                 So, You made it all the way here. Welcome.
               </p>
               
-              <p>
+                <p>
                 As long as this website is online, I am taking submissions if you want to add your name to any list, if you have a P100.
-                I accept them ONLY through this form, OR Discord (link below), but before you submit, please note I need your submission to meet some requirements:
-              </p>
+                I accept them ONLY through this form, but before you submit, please note I need your submission to meet some requirements:
+                </p>
               
               <div className="bg-red-900/30 border border-red-500 rounded-lg p-6">
                 <h3 className="text-xl font-mono mb-4 text-red-300">Requirements:</h3>

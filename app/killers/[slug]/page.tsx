@@ -287,7 +287,16 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                       {killerData.players.map((player) => {
-                        const isLongName = player.username.replace(/\s/g, '').length > 15;
+                        // Decode HTML entities to prevent rendering issues with special characters like quotes.
+                        // This ensures the username is displayed correctly and the length calculation for the pop-out effect is accurate.
+                        const decodedUsername = player.username
+                          .replace(/"/g, '"')
+                          .replace(/'/g, "'")
+                          .replace(/</g, '<')
+                          .replace(/>/g, '>')
+                          .replace(/&/g, '&'); // Ampersand must be last.
+                        
+                        const isLongName = decodedUsername.replace(/\s/g, '').length > 15;
                         const nameClasses = `font-mono text-sm text-gray-200 truncate ${isLongName ? "group-hover:absolute group-hover:z-10 group-hover:top-1/2 group-hover:left-1/2 group-hover:-translate-y-1/2 group-hover:-translate-x-1/2 group-hover:w-auto group-hover:whitespace-nowrap group-hover:overflow-visible group-hover:bg-black group-hover:p-2 group-hover:rounded-md group-hover:ring-1 group-hover:ring-red-500 group-hover:scale-110 transition-transform duration-200 ease-in-out" : ""}`;
 
                         return (
@@ -299,7 +308,7 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                             )}
                             <div className="flex items-center justify-center w-full h-full min-h-[36px]">
                               <span className={nameClasses}>
-                                {player.username}
+                                {decodedUsername}
                               </span>
                             </div>
                           </div>
