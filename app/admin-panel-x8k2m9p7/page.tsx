@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 
 
 // Interfaces
@@ -130,6 +130,7 @@ export default function AdminPage() {
   
   // Management States
   const [deletingItem, setDeletingItem] = useState<string | null>(null);
+  const [deletingScreenshotId, setDeletingScreenshotId] = useState<string | null>(null);
   
   // Storage Manager States
   const [storageItems, setStorageItems] = useState<StorageItem[]>([]);
@@ -467,6 +468,50 @@ export default function AdminPage() {
     } catch (error) {
       console.error(`Error updating submission:`, error);
       toast({ title: 'Error', description: 'Failed to update submission.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteSubmissionScreenshot = async (submission: Submission) => {
+    if (!submission.screenshot_url) return;
+    if (!confirm('Are you sure you want to delete this screenshot? This is irreversible.')) return;
+
+    setDeletingScreenshotId(submission.id);
+
+    try {
+        const supabase = createAdminClient();
+        // Regex to extract bucket and path from the public URL
+        const urlRegex = /storage\/v1\/object\/public\/([^/]+)\/(.*)/;
+        const match = submission.screenshot_url.match(urlRegex);
+
+        if (!match) {
+            throw new Error("Could not parse screenshot URL.");
+        }
+
+        const bucketName = match[1];
+        const filePath = decodeURIComponent(match[2]);
+
+        // 1. Delete the file from storage
+        const { error: storageError } = await supabase.storage.from(bucketName).remove([filePath]);
+        if (storageError) throw storageError;
+        
+        // 2. Clear the URL from the submission record in the database
+        const { error: dbError } = await supabase.from('p100_submissions').update({ screenshot_url: '' }).eq('id', submission.id);
+        if (dbError) throw dbError;
+
+        // 3. Update the local state to reflect the change immediately
+        setSubmissions(currentSubmissions =>
+            currentSubmissions.map(s =>
+                s.id === submission.id ? { ...s, screenshot_url: '' } : s
+            )
+        );
+
+        toast({ title: 'Success', description: 'Screenshot deleted successfully.' });
+
+    } catch (error: any) {
+        console.error('Error deleting submission screenshot:', error);
+        toast({ title: 'Error', description: error.message || 'Failed to delete screenshot.', variant: 'destructive' });
+    } finally {
+        setDeletingScreenshotId(null);
     }
   };
   
@@ -899,25 +944,44 @@ export default function AdminPage() {
                         <TableCell className="text-white">{getCharacterName(submission)}</TableCell>
                         <TableCell className="text-white">{new Date(submission.submitted_at).toLocaleDateString()}</TableCell>
                         <TableCell><span className={`px-2 py-1 rounded text-sm ${submission.status === 'pending' ? 'bg-yellow-600 text-black' : submission.status === 'approved' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{submission.status}</span></TableCell>
-                        <TableCell><a href={submission.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">View</a></TableCell>
                         <TableCell>
-                          {submission.status === 'pending' && (
-                            <div className="flex gap-2">
-                              <Button size="sm" onClick={() => updateSubmissionStatus(submission.id, 'approved')} className="bg-green-600 hover:bg-green-700">Approve</Button>
-                              <Dialog>
-                                <DialogTrigger asChild><Button size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700">Reject</Button></DialogTrigger>
-                                <DialogContent className="bg-black border-red-600">
-                                  <DialogHeader><DialogTitle className="text-white">Reject Submission</DialogTitle></DialogHeader>
-                                  <div className="space-y-4">
-                                    <Label className="text-white">Rejection Reason (Optional)</Label>
-                                    <Input id={`rejection-${submission.id}`} placeholder="Enter reason..." className="bg-black border-red-600 text-white" />
-                                    <Button onClick={() => { const reason = (document.getElementById(`rejection-${submission.id}`) as HTMLInputElement).value; updateSubmissionStatus(submission.id, 'rejected', reason); }} className="bg-red-600 hover:bg-red-700 w-full">Confirm Rejection</Button>
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
-                            </div>
+                          {submission.screenshot_url ? (
+                            <a href={submission.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">View</a>
+                          ) : (
+                            <span className="text-gray-500">None</span>
                           )}
-                          {submission.status === 'rejected' && submission.rejection_reason && <div className="text-sm text-gray-400">Reason: {submission.rejection_reason}</div>}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {submission.status === 'pending' && (
+                              <>
+                                <Button size="sm" onClick={() => updateSubmissionStatus(submission.id, 'approved')} className="bg-green-600 hover:bg-green-700">Approve</Button>
+                                <Dialog>
+                                  <DialogTrigger asChild><Button size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700">Reject</Button></DialogTrigger>
+                                  <DialogContent className="bg-black border-red-600">
+                                    <DialogHeader><DialogTitle className="text-white">Reject Submission</DialogTitle></DialogHeader>
+                                    <div className="space-y-4">
+                                      <Label className="text-white">Rejection Reason (Optional)</Label>
+                                      <Input id={`rejection-${submission.id}`} placeholder="Enter reason..." className="bg-black border-red-600 text-white" />
+                                      <Button onClick={() => { const reason = (document.getElementById(`rejection-${submission.id}`) as HTMLInputElement).value; updateSubmissionStatus(submission.id, 'rejected', reason); }} className="bg-red-600 hover:bg-red-700 w-full">Confirm Rejection</Button>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              </>
+                            )}
+                            {(submission.status === 'approved' || submission.status === 'rejected') && submission.screenshot_url && (
+                                <Button 
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 hover:text-yellow-300"
+                                    onClick={() => handleDeleteSubmissionScreenshot(submission)}
+                                    disabled={deletingScreenshotId === submission.id}
+                                >
+                                  {deletingScreenshotId === submission.id ? 'Deleting...' : 'Delete IMG'}
+                                </Button>
+                            )}
+                            {submission.status === 'rejected' && submission.rejection_reason && <div className="text-sm text-gray-400">Reason: {submission.rejection_reason}</div>}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )) : (
