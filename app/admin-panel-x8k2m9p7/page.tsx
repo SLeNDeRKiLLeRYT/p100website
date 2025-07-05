@@ -127,10 +127,12 @@ export default function AdminPage() {
   const [editingSurvivor, setEditingSurvivor] = useState<any>(null);
   const [editingPlayer, setEditingPlayer] = useState<any>(null);
   const [editingArtist, setEditingArtist] = useState<any>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   
   // Management States
   const [deletingItem, setDeletingItem] = useState<string | null>(null);
   const [deletingScreenshotId, setDeletingScreenshotId] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
   // Storage Manager States
   const [storageItems, setStorageItems] = useState<StorageItem[]>([]);
@@ -479,39 +481,82 @@ export default function AdminPage() {
 
     try {
         const supabase = createAdminClient();
-        // Regex to extract bucket and path from the public URL
         const urlRegex = /storage\/v1\/object\/public\/([^/]+)\/(.*)/;
         const match = submission.screenshot_url.match(urlRegex);
-
-        if (!match) {
-            throw new Error("Could not parse screenshot URL.");
-        }
+        if (!match) throw new Error("Could not parse screenshot URL.");
 
         const bucketName = match[1];
         const filePath = decodeURIComponent(match[2]);
 
-        // 1. Delete the file from storage
         const { error: storageError } = await supabase.storage.from(bucketName).remove([filePath]);
         if (storageError) throw storageError;
         
-        // 2. Clear the URL from the submission record in the database
         const { error: dbError } = await supabase.from('p100_submissions').update({ screenshot_url: '' }).eq('id', submission.id);
         if (dbError) throw dbError;
 
-        // 3. Update the local state to reflect the change immediately
         setSubmissions(currentSubmissions =>
-            currentSubmissions.map(s =>
-                s.id === submission.id ? { ...s, screenshot_url: '' } : s
-            )
+            currentSubmissions.map(s => s.id === submission.id ? { ...s, screenshot_url: '' } : s)
         );
-
         toast({ title: 'Success', description: 'Screenshot deleted successfully.' });
-
     } catch (error: any) {
         console.error('Error deleting submission screenshot:', error);
         toast({ title: 'Error', description: error.message || 'Failed to delete screenshot.', variant: 'destructive' });
     } finally {
         setDeletingScreenshotId(null);
+    }
+  };
+
+  const handleBulkDeleteScreenshots = async () => {
+    setIsBulkDeleting(true);
+
+    const submissionsToDelete = submissions.filter(s => 
+        (s.status === 'approved' || s.status === 'rejected') && s.screenshot_url
+    );
+
+    if (submissionsToDelete.length === 0) {
+        toast({ title: 'No Screenshots to Delete', description: 'There are no processed submissions with screenshots.' });
+        setIsBulkDeleting(false);
+        setShowBulkDeleteConfirm(false);
+        return;
+    }
+
+    const pathsToDelete: string[] = [];
+    const idsToUpdate: string[] = [];
+    const urlRegex = /storage\/v1\/object\/public\/([^/]+)\/(.*)/;
+
+    for (const sub of submissionsToDelete) {
+        const match = sub.screenshot_url.match(urlRegex);
+        if (match && match[1] === 'screenshots') {
+            pathsToDelete.push(decodeURIComponent(match[2]));
+            idsToUpdate.push(sub.id);
+        }
+    }
+
+    if (pathsToDelete.length === 0) {
+        toast({ title: 'No Valid Screenshots Found', description: 'Could not parse any valid screenshot paths to delete.' });
+        setIsBulkDeleting(false);
+        setShowBulkDeleteConfirm(false);
+        return;
+    }
+
+    try {
+        const supabase = createAdminClient();
+
+        const { error: storageError } = await supabase.storage.from('screenshots').remove(pathsToDelete);
+        if (storageError) throw storageError;
+
+        const { error: dbError } = await supabase.from('p100_submissions').update({ screenshot_url: '' }).in('id', idsToUpdate);
+        if (dbError) throw dbError;
+        
+        toast({ title: 'Success', description: `Successfully deleted ${pathsToDelete.length} screenshots.` });
+        await fetchSubmissions();
+
+    } catch (error: any) {
+        console.error('Error during bulk screenshot deletion:', error);
+        toast({ title: 'Error', description: error.message || 'Failed to delete all screenshots.', variant: 'destructive' });
+    } finally {
+        setIsBulkDeleting(false);
+        setShowBulkDeleteConfirm(false);
     }
   };
   
@@ -577,7 +622,6 @@ export default function AdminPage() {
   };
 
   const savePlayer = async (playerData: any) => {
-    // Add validation to ensure required fields are present
     if (!playerData.username || !playerData.username.trim()) {
         toast({ title: 'Validation Error', description: 'Username is required.', variant: 'destructive' });
         return;
@@ -590,8 +634,6 @@ export default function AdminPage() {
     try {
       const supabase = createAdminClient();
       const { id, killers, survivors, ...updateData } = playerData;
-      
-      // Sanitize username before insert/update
       updateData.username = sanitizeInput(updateData.username.trim());
 
       if (id && p100Players.find(p => p.id === id)) {
@@ -916,21 +958,61 @@ export default function AdminPage() {
 
           <TabsContent value="submissions" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
-              <div className="flex gap-4 mb-6">
-                <div>
-                  <Label className="text-white">Filter by Type</Label>
-                  <Select value={filter} onValueChange={(value) => setFilter(value as any)}>
-                      <SelectTrigger className="bg-black border-red-600 text-white w-32 ml-2"><SelectValue /></SelectTrigger>
-                      <SelectContent className="bg-black border-red-600"><SelectItem value="all">All</SelectItem><SelectItem value="killer">Killers</SelectItem><SelectItem value="survivor">Survivors</SelectItem></SelectContent>
-                  </Select>
+              <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <Label className="text-white">Filter by Type</Label>
+                    <Select value={filter} onValueChange={(value) => setFilter(value as any)}>
+                        <SelectTrigger className="bg-black border-red-600 text-white w-32 ml-2"><SelectValue /></SelectTrigger>
+                        <SelectContent className="bg-black border-red-600"><SelectItem value="all">All</SelectItem><SelectItem value="killer">Killers</SelectItem><SelectItem value="survivor">Survivors</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-white">Filter by Status</Label>
+                    <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
+                        <SelectTrigger className="bg-black border-red-600 text-white w-32 ml-2"><SelectValue /></SelectTrigger>
+                        <SelectContent className="bg-black border-red-600"><SelectItem value="all">All</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-white">Filter by Status</Label>
-                   <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
-                      <SelectTrigger className="bg-black border-red-600 text-white w-32 ml-2"><SelectValue /></SelectTrigger>
-                      <SelectContent className="bg-black border-red-600"><SelectItem value="all">All</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent>
-                  </Select>
-                </div>
+                <Dialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
+                    <DialogTrigger asChild>
+                        <Button variant="destructive" className="bg-red-800 hover:bg-red-700">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Bulk Delete Processed Screenshots
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-black border-red-600">
+                        <DialogHeader>
+                            <DialogTitle className="text-white">Confirm Bulk Deletion</DialogTitle>
+                        </DialogHeader>
+                        <div className="text-gray-300">
+                            <p>
+                                Are you sure you want to delete all screenshots from
+                                <strong> approved</strong> and <strong>rejected</strong> submissions?
+                            </p>
+                            <p className="mt-2 font-bold text-yellow-400">
+                                This will permanently delete{' '}
+                                {
+                                    submissions.filter(s => (s.status === 'approved' || s.status === 'rejected') && s.screenshot_url).length
+                                }{' '}
+                                files. This action cannot be undone.
+                            </p>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <Button variant="outline" className="border-gray-600 text-white" onClick={() => setShowBulkDeleteConfirm(false)} disabled={isBulkDeleting}>
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                onClick={handleBulkDeleteScreenshots}
+                                disabled={isBulkDeleting}
+                            >
+                                {isBulkDeleting ? 'Deleting...' : 'Yes, Delete Them All'}
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
               </div>
 
               {loading ? <div className="text-center text-white py-8">Loading submissions...</div> : (
@@ -1226,11 +1308,7 @@ export default function AdminPage() {
                             <Select 
                                 value={editingPlayer.killer_id || editingPlayer.survivor_id || ''} 
                                 onValueChange={(value) => {
-                                    // Check if the selected ID belongs to a killer
                                     const isKiller = allKillers.some(k => k.id === value);
-                                    
-                                    // Update the state, setting the correct ID field (killer_id or survivor_id)
-                                    // and ensuring the other is null.
                                     setEditingPlayer({
                                         ...editingPlayer, 
                                         killer_id: isKiller ? value : null, 
