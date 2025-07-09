@@ -634,7 +634,8 @@ export default function AdminPage() {
     try {
       const supabase = createAdminClient();
       const { id, killers, survivors, ...updateData } = playerData;
-      updateData.username = sanitizeInput(updateData.username.trim());
+      // The line below has been changed to remove sanitization for admin input.
+      updateData.username = updateData.username.trim();
 
       if (id && p100Players.find(p => p.id === id)) {
         await supabase.from('p100_players').update(updateData).eq('id', id).throwOnError();
