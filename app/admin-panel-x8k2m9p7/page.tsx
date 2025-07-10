@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, Pencil } from 'lucide-react';
 
 
 // Interfaces
@@ -142,6 +142,9 @@ export default function AdminPage() {
   const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [uploadingToFolder, setUploadingToFolder] = useState<string | null>(null);
+  const [renamingItem, setRenamingItem] = useState<{ bucket: string; path: string; } | null>(null);
+  const [newFileName, setNewFileName] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
 
   // File Picker States
   const [showFilePicker, setShowFilePicker] = useState(false);
@@ -800,6 +803,90 @@ export default function AdminPage() {
         setDeletingFile(null);
     }
   };
+
+  const handleRename = async () => {
+    if (!renamingItem || !newFileName.trim()) {
+        toast({ title: 'Error', description: 'New file name cannot be empty.', variant: 'destructive' });
+        return;
+    }
+    
+    setIsRenaming(true);
+    const { bucket, path: oldPath } = renamingItem;
+    const oldName = oldPath.split('/').pop() || '';
+    const fileExtension = oldName.includes('.') ? `.${oldName.split('.').pop()}` : '';
+    let sanitizedNewName = sanitizeFileName(newFileName);
+
+    if (fileExtension && !sanitizedNewName.endsWith(fileExtension)) {
+        sanitizedNewName = sanitizedNewName.split('.')[0] + fileExtension;
+    }
+    
+    if (sanitizedNewName === oldName) {
+        setRenamingItem(null);
+        setIsRenaming(false);
+        return;
+    }
+
+    const pathParts = oldPath.split('/');
+    pathParts.pop();
+    const newPath = pathParts.length > 0 ? `${pathParts.join('/')}/${sanitizedNewName}` : sanitizedNewName;
+
+    try {
+        const supabaseAdmin = createAdminClient();
+        const { error: moveError } = await supabaseAdmin.storage.from(bucket).move(oldPath, newPath);
+        if (moveError) throw new Error(`Storage error: ${moveError.message}`);
+
+        const supabase = createClient();
+        const { data: { publicUrl: oldPublicUrl } } = supabase.storage.from(bucket).getPublicUrl(oldPath);
+        const { data: { publicUrl: newPublicUrl } } = supabase.storage.from(bucket).getPublicUrl(newPath);
+
+        if (!oldPublicUrl || !newPublicUrl) throw new Error("Could not generate public URLs.");
+
+        const tablesToUpdate = {
+            'killers': ['image_url', 'background_image_url', 'header_url', 'artist_urls', 'legacy_header_urls'],
+            'survivors': ['image_url', 'background_image_url', 'header_url', 'artist_urls', 'legacy_header_urls'],
+        };
+        const arrayFields = ['artist_urls', 'legacy_header_urls'];
+
+        for (const [table, columns] of Object.entries(tablesToUpdate)) {
+            for (const column of columns) {
+                if (arrayFields.includes(column)) {
+                    const { data, error } = await supabaseAdmin.from(table).select(`id, ${column}`).contains(column, [oldPublicUrl]);
+                    if (error) {
+                        console.error(`Error selecting from ${table} for array update:`, error);
+                        continue;
+                    }
+                    if (data && data.length > 0) {
+                        for (const row of data as unknown as { id: string; [key: string]: any }[]) {
+                            const urls: string[] = Array.isArray(row[column]) ? row[column] : [];
+                            const updatedArray = urls.map((url: string) => url === oldPublicUrl ? newPublicUrl : url);
+                            const { error: updateError } = await supabaseAdmin.from(table).update({ [column]: updatedArray }).eq('id', row.id);
+                            if (updateError) console.error(`Failed to update row ${row.id} in ${table}:`, updateError);
+                        }
+                    }
+                } else {
+                    const { error: updateError } = await supabaseAdmin.from(table).update({ [column]: newPublicUrl }).eq(column, oldPublicUrl);
+                    if (updateError) console.error(`Failed to update ${column} in ${table}:`, updateError);
+                }
+            }
+        }
+        
+        toast({ title: 'Success', description: `Renamed "${oldName}" to "${sanitizedNewName}". References updated.` });
+        
+        await fetchStorageItems(bucket);
+        if (showFilePicker) {
+            await fetchStorageItems(filePickerBucket);
+        }
+        await fetchAllCharacters();
+
+    } catch (error: any) {
+        console.error('Error renaming file:', error);
+        toast({ title: 'Error', description: error.message || 'Failed to rename file.', variant: 'destructive' });
+    } finally {
+        setIsRenaming(false);
+        setRenamingItem(null);
+        setNewFileName('');
+    }
+  };
   
   const toggleFolder = (folderName: string) => {
     setExpandedFolders(prev =>
@@ -1239,11 +1326,19 @@ export default function AdminPage() {
                                 {expandedFolders.includes(folder) && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                         {items.map(item => (
-                                            <div key={item.path} className="bg-black/60 border border-red-600/30 rounded p-3">
-                                                <div className="flex justify-between items-start mb-2"><h4 className="text-white text-sm font-medium truncate pr-2">{item.name}</h4><Button onClick={() => deleteStorageItem(item.bucket, item.path)} size="icon" variant="destructive" className="h-6 w-6 flex-shrink-0" disabled={deletingFile === item.path}>×</Button></div>
-                                                {item.publicUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) && <img src={item.publicUrl} alt={item.name} className="w-full h-20 object-cover rounded mb-2"/>}
-                                                <p className="text-xs text-gray-400 truncate">Path: {item.path}</p>
-                                                <p className="text-xs text-gray-400">Size: {formatFileSize(item.size)}</p>
+                                            <div key={item.path} className="bg-black/60 border border-red-600/30 rounded p-3 flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h4 className="text-white text-sm font-medium break-all pr-2">{item.name}</h4>
+                                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                                            <Button onClick={() => { setRenamingItem({ bucket: item.bucket, path: item.path }); setNewFileName(item.name); }} size="icon" variant="outline" className="h-6 w-6 border-blue-600 text-blue-400 hover:bg-blue-900/50"><Pencil size={12} /></Button>
+                                                            <Button onClick={() => deleteStorageItem(item.bucket, item.path)} size="icon" variant="destructive" className="h-6 w-6" disabled={deletingFile === item.path}><Trash2 size={12} /></Button>
+                                                        </div>
+                                                    </div>
+                                                    {item.publicUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) && <img src={item.publicUrl} alt={item.name} className="w-full h-20 object-cover rounded mb-2"/>}
+                                                    <p className="text-xs text-gray-400 truncate">Path: {item.path}</p>
+                                                    <p className="text-xs text-gray-400">Size: {formatFileSize(item.size)}</p>
+                                                </div>
                                                 <Button onClick={() => copyToClipboard(item.publicUrl)} size="sm" className="w-full mt-2 bg-blue-600/80 hover:bg-blue-600 text-xs">Copy URL</Button>
                                             </div>
                                         ))}
@@ -1398,9 +1493,10 @@ export default function AdminPage() {
                                   {items.map((item) => {
                                       const isSelected = selectedFiles.includes(item.publicUrl);
                                       return (
-                                          <div key={item.path} onClick={() => selectFileForPicker(item.publicUrl)} className={`p-2 rounded border-2 cursor-pointer transition-all ${isSelected ? 'border-green-500 bg-green-900/40' : 'border-red-600/30 bg-black/60 hover:border-red-500'}`}>
+                                          <div key={item.path} onClick={() => selectFileForPicker(item.publicUrl)} className={`p-2 rounded border-2 cursor-pointer transition-all relative group ${isSelected ? 'border-green-500 bg-green-900/40' : 'border-red-600/30 bg-black/60 hover:border-red-500'}`}>
                                               {item.publicUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) && <img src={item.publicUrl} alt={item.name} className="w-full h-24 object-cover rounded mb-2"/>}
                                               <h4 className="text-white text-xs font-medium truncate" title={item.name.split('/').pop() || item.name}>{item.name.split('/').pop() || item.name}</h4>
+                                              <Button onClick={(e) => { e.stopPropagation(); setRenamingItem({ bucket: item.bucket, path: item.path }); setNewFileName(item.name); }} size="icon" variant="outline" className="absolute top-1 right-1 h-6 w-6 border-blue-600 text-blue-400 hover:bg-blue-900/50 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={12} /></Button>
                                           </div>
                                       );
                                   })}
@@ -1415,6 +1511,30 @@ export default function AdminPage() {
                 </div>
             </DialogContent>
           </Dialog>
+        )}
+
+        {renamingItem && (
+            <Dialog open={!!renamingItem} onOpenChange={() => setRenamingItem(null)}>
+                <DialogContent className="bg-black border-red-600 max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="text-white">Rename File</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div>
+                            <Label className="text-white">Current Path</Label>
+                            <p className="text-sm text-gray-400 break-all">{renamingItem.path}</p>
+                        </div>
+                        <div>
+                            <Label htmlFor="new-filename" className="text-white">New File Name</Label>
+                            <Input id="new-filename" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} className="bg-black border-red-600 text-white" onKeyDown={(e) => e.key === 'Enter' && !isRenaming && handleRename()}/>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <Button onClick={() => setRenamingItem(null)} variant="outline" className="border-red-600 text-white hover:bg-red-900" disabled={isRenaming}>Cancel</Button>
+                            <Button onClick={handleRename} className="bg-blue-600 hover:bg-blue-700" disabled={isRenaming}>{isRenaming ? 'Renaming...' : 'Rename'}</Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         )}
       </div>
     </BackgroundWrapper>
