@@ -157,9 +157,6 @@ export default function HighlightOfTheDay() {
                     <div className="absolute bottom-0 left-0 right-0 p-2 text-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <p className="text-white text-xs font-semibold truncate">{character.name}</p>
                     </div>
-                    <div className="absolute top-1 right-1 bg-red-600 text-white text-xs px-1 py-0.5 rounded">
-                      P100
-                    </div>
                   </Link>
                 );
               })}
