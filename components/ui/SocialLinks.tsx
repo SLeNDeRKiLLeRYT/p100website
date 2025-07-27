@@ -8,7 +8,7 @@ export default function SocialLinks() {
 
       <div className="flex gap-4 mb-2">
         <Link
-          href="https://discord.com/invite/9eNxdY4"
+          href="https://discord.gg/GFPuzehJZs"
           target="_blank"
           className="transition-transform duration-300 ease-in-out hover:scale-125"
         >
