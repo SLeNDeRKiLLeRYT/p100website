@@ -21,11 +21,13 @@ export default function SearchPage() {
   
   const supabase = createClient();
 
+  // --- UPDATED AND OPTIMIZED useEffect ---
   useEffect(() => {
     const term = searchTerm.trim();
 
     if (term.length < 2) {
       setSuggestions([]);
+      setShowSuggestions(false);
       setIsSearching(false);
       return;
     }
@@ -33,43 +35,32 @@ export default function SearchPage() {
     setIsSearching(true);
 
     const timer = setTimeout(async () => {
-      let finalSuggestions: Suggestion[] = [];
       try {
+        // Call the database function instead of doing a broad select
         const { data, error } = await supabase
-          .from('p100_players')
-          .select('username')
-          .ilike('username', `%${term}%`)
-          .order('username');
+          .rpc('search_players', { search_term: term });
 
-        if (error) throw error;
-        
-        // --- FIX: Process data only if it exists, don't return early ---
-        if (data && data.length > 0) {
-          const userCounts = data.reduce((acc: Record<string, number>, player) => {
-            acc[player.username] = (acc[player.username] || 0) + 1;
-            return acc;
-          }, {});
-
-          const results: Suggestion[] = Object.entries(userCounts).map(([username, count]) => ({
-            username,
-            p100Count: count,
-          }));
-          
-          finalSuggestions = results.slice(0, 10);
+        if (error) {
+          throw error;
         }
+
+        // The data is already in the correct format: { username: string, p100Count: number }[]
+        // No client-side processing needed!
+        setSuggestions(data || []);
+        setShowSuggestions(data && data.length > 0);
+
       } catch (error) {
-        console.error("Failed to fetch suggestions:", error);
-        finalSuggestions = []; // Ensure suggestions are cleared on error
+        console.error("Failed to fetch suggestions via RPC:", error);
+        setSuggestions([]); // Ensure suggestions are cleared on error
+        setShowSuggestions(false);
       } finally {
-        // --- FIX: This now runs reliably ---
-        setSuggestions(finalSuggestions);
-        setShowSuggestions(finalSuggestions.length > 0);
         setIsSearching(false);
       }
-    }, 300);
+    }, 300); // 300ms debounce timer
 
     return () => clearTimeout(timer);
   }, [searchTerm, supabase]);
+
 
   const handleSearch = (username: string) => {
     const trimmedUsername = username.trim();
