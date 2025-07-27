@@ -66,30 +66,30 @@ body {
 
 .character-grid {
   @apply grid gap-3 md:gap-4 justify-center;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
 }
 
 @media (min-width: 640px) {
-  .character-grid {
-    grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
-  }
-}
-
-@media (min-width: 768px) {
   .character-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 }
 
+@media (min-width: 768px) {
+  .character-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
 @media (min-width: 1024px) {
   .character-grid {
-    grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
 }
 
 @media (min-width: 1280px) {
   .character-grid {
-    grid-template-columns: repeat(auto-fill, minmax(192px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   }
 }
 
@@ -137,15 +137,14 @@ body {
 .character-name {
   position: absolute;
   bottom: 0;
+  left: 0;
   right: 0;
   background-color: rgba(0, 0, 0, 0.8);
   color: white;
   font-size: 0.875rem;
   padding: 0.5rem 0.75rem;
   z-index: 10;
-  border-top-left-radius: 0.25rem;
-  max-width: 80%;
-  text-align: right;
+  text-align: center;
 }
 
 .social-icon {
@@ -234,4 +233,13 @@ body {
 
 .section-title {
   @apply text-2xl md:text-3xl font-mono mb-6 flex items-center gap-3;
+}
+
+/* Legacy player glow effects - simplified since we now use image */
+.legacy-glow {
+  color: rgb(254, 215, 170); /* orange-100 */
+}
+
+.legacy-glow-strong {
+  color: rgb(254, 215, 170); /* orange-100 */
 }

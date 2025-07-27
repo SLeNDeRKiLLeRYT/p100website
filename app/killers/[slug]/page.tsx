@@ -14,6 +14,7 @@ interface P100Player {
   username: string;
   added_at: string;
   p200: boolean | null;
+  legacy: boolean | null; // Add legacy field
 }
 
 interface KillerData {
@@ -222,7 +223,6 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                     })()}
                     <div>
                       <div className="relative aspect-[3/4] overflow-hidden rounded-lg shadow-lg">
-                      // 
                         <Image src={killerData.legacy_header_urls![1]!} alt={`${killerData.name} perks`} fill className="object-contain" priority/>
                       </div>
                     </div>
@@ -287,31 +287,50 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                       {killerData.players.map((player) => {
-                        // Decode HTML entities to prevent rendering issues with special characters like quotes.
-                        // This ensures the username is displayed correctly and the length calculation for the pop-out effect is accurate.
                         const decodedUsername = player.username
                           .replace(/"/g, '"')
                           .replace(/'/g, "'")
                           .replace(/</g, '<')
                           .replace(/>/g, '>')
-                          .replace(/&/g, '&'); // Ampersand must be last.
+                          .replace(/&/g, '&');
                         
                         const isLongName = decodedUsername.replace(/\s/g, '').length > 15;
-                        const nameClasses = `font-mono text-sm text-gray-200 truncate ${isLongName ? "group-hover:absolute group-hover:z-10 group-hover:top-1/2 group-hover:left-1/2 group-hover:-translate-y-1/2 group-hover:-translate-x-1/2 group-hover:w-auto group-hover:whitespace-nowrap group-hover:overflow-visible group-hover:bg-black group-hover:p-2 group-hover:rounded-md group-hover:ring-1 group-hover:ring-red-500 group-hover:scale-110 transition-transform duration-200 ease-in-out" : ""}`;
+                        const baseNameClasses = `font-mono text-sm text-gray-200 truncate ${isLongName ? "group-hover:absolute group-hover:z-10 group-hover:top-1/2 group-hover:left-1/2 group-hover:-translate-y-1/2 group-hover:-translate-x-1/2 group-hover:w-auto group-hover:whitespace-nowrap group-hover:overflow-visible group-hover:bg-black group-hover:p-2 group-hover:rounded-md group-hover:ring-1 group-hover:ring-red-500 group-hover:scale-110 transition-transform duration-200 ease-in-out" : ""}`;
+                        
+                        // Add legacy glow effect
+                        const nameClasses = player.legacy 
+                          ? `${baseNameClasses} text-orange-200 drop-shadow-[0_0_4px_rgba(251,146,60,0.8)] animate-pulse`
+                          : baseNameClasses;
 
                         return (
-                          <div key={player.id} className="group relative bg-black/40 border border-red-600/20 rounded-md p-3 hover:border-red-500/40 hover:bg-black/60 transition-all duration-200" role="listitem" tabIndex={0}>
-                            {player.p200 && (
-                              <div className="absolute top-1 right-1 w-6 h-6 z-20" title="P200 means a player reached P100 on the same character twice. This is a rare achievement and the players on this list deserve full credit for the time and dedication it takes to reach it.">
-                                <Image src="/p200.png" alt="P200 Achievement" width={24} height={24} className="object-contain"/>
-                              </div>
-                            )}
-                            <div className="flex items-center justify-center w-full h-full min-h-[36px]">
+                            <Link
+                              key={player.id}
+                              href={`/profile/${encodeURIComponent(decodedUsername)}`}
+                              className="group relative block bg-black/40 border border-red-600/20 rounded-md p-3 hover:border-red-500/40 hover:bg-black/60 transition-all duration-200"
+                              role="listitem"
+                              tabIndex={0}
+                              title={`View P100 profile for ${decodedUsername}`}
+                            >
+                              <div className="flex flex-col items-center justify-center w-full h-full min-h-[36px] space-y-2">
                               <span className={nameClasses}>
                                 {decodedUsername}
                               </span>
+                              {(player.p200 || player.legacy) && (
+                                <div className="flex items-center gap-1">
+                                  {player.p200 && (
+                                    <div className="w-5 h-5" title="P200 means a player reached P100 on the same character twice. This is a rare achievement and the players on this list deserve full credit for the time and dedication it takes to reach it.">
+                                      <Image src="/p200.png" alt="P200 Achievement" width={20} height={20} className="object-contain"/>
+                                    </div>
+                                  )}
+                                  {player.legacy && (
+                                    <div className="w-5 h-5" title="Legacy player: One of the original P100 achievers who reached this milestone when it was extremely rare and difficult.">
+                                      <Image src="/legacy.png" alt="Legacy Achievement" width={20} height={20} className="object-contain"/>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                          </div>
+                            </Link>
                         );
                       })}
                     </div>

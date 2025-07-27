@@ -47,6 +47,7 @@ export type Database = {
           background_image_url: string | null;
           created_at: string;
           updated_at: string;
+          header_url: string | null;
           artist_urls: string[] | null;
           legacy_header_urls: string[] | null;
         };        Insert: {
@@ -57,6 +58,7 @@ export type Database = {
           background_image_url?: string | null;
           created_at?: string;
           updated_at?: string;
+          header_url?: string | null;
           artist_urls?: string[] | null;
           legacy_header_urls?: string[] | null;
         };        Update: {
@@ -67,6 +69,7 @@ export type Database = {
           background_image_url?: string | null;
           created_at?: string;
           updated_at?: string;
+          header_url?: string | null;
           artist_urls?: string[] | null;
           legacy_header_urls?: string[] | null;
         };

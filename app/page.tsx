@@ -1,6 +1,9 @@
 import Link from "next/link";
 import Navigation from "@/components/ui/Navigation";
 import BackgroundWrapper from "@/components/BackgroundWrapper";
+import RecentP100s from "@/components/RecentP100s";
+import HighlightOfTheDay from "@/components/HighlightOfTheDay";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Home() {
   return (
@@ -42,6 +45,34 @@ export default function Home() {
               <Link href="/submission" className="nav-button-large inline-block rounded-lg">
                 🎯 SUBMIT P100
               </Link>
+            </div>
+            
+            {/* P100 Showcase Section with Tabs */}
+            <div className="mb-8 md:mb-12">
+              <Tabs defaultValue="recent" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 bg-black/60 border border-red-600/50">
+                  <TabsTrigger 
+                    value="recent" 
+                    className="data-[state=active]:bg-red-600 data-[state=active]:text-white text-gray-300"
+                  >
+                    Recent P100s
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="highlight" 
+                    className="data-[state=active]:bg-yellow-600 data-[state=active]:text-black text-gray-300"
+                  >
+                    Highlight of the Day
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="recent" className="mt-6">
+                  <RecentP100s />
+                </TabsContent>
+                
+                <TabsContent value="highlight" className="mt-6">
+                  <HighlightOfTheDay />
+                </TabsContent>
+              </Tabs>
             </div>
             
             <div className="bg-black/40 border-2 border-red-600/50 rounded-lg p-6 md:p-8 mb-8 md:mb-12 backdrop-blur-sm">

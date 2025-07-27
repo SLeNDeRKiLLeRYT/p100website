@@ -18,7 +18,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Textarea } from '@/components/ui/textarea';
 import { ChevronLeft, ChevronRight, Trash2, Pencil } from 'lucide-react';
 
-
 // Interfaces
 interface Submission {
   id: string;
@@ -29,6 +28,8 @@ interface Submission {
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason?: string;
   submitted_at: string;
+  comment?: string; // --- ADDED ---
+  legacy?: boolean; // Add legacy field
 }
 
 interface Character {
@@ -81,6 +82,24 @@ const sanitizeFileName = (filename: string): string => {
     .replace(/[^a-zA-Z0-9-_\.]/g, '');
 };
 
+interface NewCharacterForm {
+  name: string;
+  id: string;
+  type: 'killer' | 'survivor';
+  image: File | null;
+  backgroundImage: File | null;
+  headerImage: File | null;
+  artistImages: File[];
+}
+
+interface ArtworkUploadForm {
+  artworkFile: File | null;
+  characterId: string;
+  characterType: 'killer' | 'survivor';
+  artistName: string;
+  artistId: string;
+  placement: 'gallery' | 'header' | 'legacy_header';
+}
 
 export default function AdminPage() {
   const searchParams = useSearchParams();
@@ -114,6 +133,7 @@ export default function AdminPage() {
   // Filter States
   const [filter, setFilter] = useState<'all' | 'killer' | 'survivor'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [submissionSort, setSubmissionSort] = useState<'newest' | 'oldest'>('newest');
   const [playerSearchTerm, setPlayerSearchTerm] = useState('');
   const [playerSort, setPlayerSort] = useState<'added_at_desc' | 'added_at_asc' | 'username_asc' | 'username_desc' | 'character_asc' | 'character_desc'>('added_at_desc');
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('all');
@@ -160,14 +180,40 @@ export default function AdminPage() {
   // List of available buckets
   const buckets = ['killerimages', 'backgrounds', 'survivorbackgrounds', 'survivors', 'screenshots', 'artworks'];
 
+  // New Character Form States
+  const [newCharacterForm, setNewCharacterForm] = useState<NewCharacterForm>({
+    name: '',
+    id: '',
+    type: 'killer',
+    image: null,
+    backgroundImage: null,
+    headerImage: null,
+    artistImages: []
+  });
+  const [creatingCharacter, setCreatingCharacter] = useState(false);
+  
+  // Artwork Upload Form States
+  const [artworkUploadForm, setArtworkUploadForm] = useState<ArtworkUploadForm>({
+    artworkFile: null,
+    characterId: '',
+    characterType: 'killer',
+    artistName: '',
+    artistId: '',
+    placement: 'gallery'
+  });
+  const [uploadingArtwork, setUploadingArtwork] = useState(false);
+
   // Initial Auth Check and Data Fetch
   useEffect(() => {
-    const isAuth = sessionStorage.getItem('admin_authenticated') === 'true';
-    if (isAuth) {
+    // Check if user is already authenticated in this session
+    const isSessionAuthenticated = sessionStorage.getItem('admin_authenticated') === 'true';
+    
+    if (isSessionAuthenticated) {
       setIsAuthenticated(true);
       fetchInitialData();
     }
-
+    
+    // Handle login attempts tracking
     const attempts = localStorage.getItem('admin_login_attempts');
     if (attempts) {
       const parsedAttempts = JSON.parse(attempts) as LoginAttempts;
@@ -196,6 +242,12 @@ export default function AdminPage() {
           clearTimeout(handler);
       };
   }, [playerSearchTerm, selectedCharacterId, playerSort, isAuthenticated]);
+
+  // Re-fetch submissions when sort order changes
+  useEffect(() => {
+      if (!isAuthenticated) return;
+      fetchSubmissions();
+  }, [submissionSort, isAuthenticated]);
 
   // Lockout Timer
   useEffect(() => {
@@ -236,6 +288,12 @@ export default function AdminPage() {
       }
   }, [filePickerBucket, showFilePicker]);
 
+  // Computed variable for dropdown options
+  const allCharactersForDropdown = useMemo(() => {
+    const killerOptions = allKillers.map(k => ({ ...k, type: 'killer' as const }));
+    const survivorOptions = allSurvivors.map(s => ({ ...s, type: 'survivor' as const }));
+    return [...killerOptions, ...survivorOptions];
+  }, [allKillers, allSurvivors]);
 
   // --- DATA FETCHING FUNCTIONS ---
   const fetchInitialData = async () => {
@@ -289,8 +347,8 @@ export default function AdminPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('p100_submissions')
-        .select('id, username, killer_id, survivor_id, screenshot_url, status, rejection_reason, submitted_at')
-        .order('submitted_at', { ascending: false });
+        .select('id, username, killer_id, survivor_id, screenshot_url, status, rejection_reason, submitted_at, comment, legacy') // --- ADDED comment and legacy ---
+        .order('submitted_at', { ascending: submissionSort === 'oldest' });
       if (error) throw error;
       setSubmissions(data || []);
     } catch (error) {
@@ -409,6 +467,7 @@ export default function AdminPage() {
     setAuthLoading(true);
     if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
       setIsAuthenticated(true);
+      // Store authentication in sessionStorage (persists during session, cleared when browser/tab closes)
       sessionStorage.setItem('admin_authenticated', 'true');
       const resetAttempts = { count: 0, lastAttempt: 0, isLocked: false };
       setLoginAttempts(resetAttempts);
@@ -434,6 +493,7 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
+    // Clear session authentication
     sessionStorage.removeItem('admin_authenticated');
     setSubmissions([]);
     setKillers([]);
@@ -448,6 +508,34 @@ export default function AdminPage() {
   
 
   // --- CRUD & MANAGEMENT FUNCTIONS ---
+  const updateSubmissionLegacyStatus = async (submissionId: string, legacyStatus: boolean) => {
+    try {
+      const supabase = createAdminClient();
+      await supabase
+        .from('p100_submissions')
+        .update({ legacy: legacyStatus })
+        .eq('id', submissionId)
+        .throwOnError();
+      
+      // Update the local state
+      setSubmissions(currentSubmissions =>
+        currentSubmissions.map(s => s.id === submissionId ? { ...s, legacy: legacyStatus } : s)
+      );
+      
+      toast({ 
+        title: 'Success', 
+        description: `Legacy status ${legacyStatus ? 'enabled' : 'disabled'} for submission.` 
+      });
+    } catch (error) {
+      console.error('Error updating legacy status:', error);
+      toast({ 
+        title: 'Error', 
+        description: 'Failed to update legacy status.', 
+        variant: 'destructive' 
+      });
+    }
+  };
+
   const updateSubmissionStatus = async (id: string, status: 'approved' | 'rejected', rejectionReason?: string) => {
     try {
       const supabase = createAdminClient();
@@ -464,7 +552,12 @@ export default function AdminPage() {
         const { data: existingPlayer } = await supabase.from('p100_players').select('id').eq('username', sanitizedUsername).eq(characterColumn, characterId).single();
 
         if (!existingPlayer) {
-          await supabase.from('p100_players').insert({ username: sanitizedUsername, [characterColumn]: characterId, p200: false }).throwOnError();
+          await supabase.from('p100_players').insert({ 
+            username: sanitizedUsername, 
+            [characterColumn]: characterId, 
+            p200: false,
+            legacy: false // Always set to false, legacy status is managed elsewhere
+          }).throwOnError();
         }
       }
       toast({ title: 'Success', description: `Submission ${status}.` });
@@ -899,8 +992,205 @@ export default function AdminPage() {
       .then(() => toast({ title: 'Success', description: 'URL copied to clipboard!' }))
       .catch(() => toast({ title: 'Error', description: 'Failed to copy URL.', variant: 'destructive' }));
   };
+
+  // Function to upload artwork to character
+  const uploadArtworkToCharacter = async () => {
+    if (!artworkUploadForm.artworkFile || !artworkUploadForm.characterId || !artworkUploadForm.artistId) {
+      toast({ title: 'Validation Error', description: 'Please fill in all required fields.', variant: 'destructive' });
+      return;
+    }
+
+    setUploadingArtwork(true);
+    try {
+      const supabase = createAdminClient();
+      const selectedArtist = artists.find(a => a.id === artworkUploadForm.artistId);
+      const artistSlug = sanitizeFileName(selectedArtist?.name || 'unknown');
+      const timestamp = Date.now();
+      const fileExtension = artworkUploadForm.artworkFile.name.split('.').pop();
+      const fileName = `${artworkUploadForm.characterId}-${artistSlug}-${timestamp}-by-${artistSlug}.${fileExtension}`;
+      
+      // Upload to artworks bucket
+      const artworkUrl = await uploadImageToStorage(artworkUploadForm.artworkFile, 'artworks', fileName);
+      
+      // Update character record based on placement
+      const tableName = artworkUploadForm.characterType === 'killer' ? 'killers' : 'survivors';
+      const { data: character, error: fetchError } = await supabase
+        .from(tableName)
+        .select('*')
+        .eq('id', artworkUploadForm.characterId)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      
+      let updateData = {};
+      
+      if (artworkUploadForm.placement === 'gallery') {
+        const currentUrls = character.artist_urls || [];
+        updateData = { artist_urls: [...currentUrls, artworkUrl] };
+      } else if (artworkUploadForm.placement === 'header') {
+        updateData = { header_url: artworkUrl };
+      } else if (artworkUploadForm.placement === 'legacy_header') {
+        const currentUrls = character.legacy_header_urls || [];
+        updateData = { legacy_header_urls: [...currentUrls, artworkUrl] };
+      }
+      
+      const { error: updateError } = await supabase
+        .from(tableName)
+        .update(updateData)
+        .eq('id', artworkUploadForm.characterId);
+      
+      if (updateError) throw updateError;
+      
+      toast({ title: 'Success', description: 'Artwork uploaded and added to character successfully!' });
+      
+      // Reset form
+      setArtworkUploadForm({
+        artworkFile: null,
+        characterId: '',
+        characterType: 'killer',
+        artistName: '',
+        artistId: '',
+        placement: 'gallery'
+      });
+      
+      // Refresh character data
+      await fetchAllCharacters();
+      
+    } catch (error: any) {
+      console.error('Error uploading artwork:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to upload artwork.', variant: 'destructive' });
+    } finally {
+      setUploadingArtwork(false);
+    }
+  };
+
+  // Function to create new character
+  const createNewCharacter = async () => {
+    if (!newCharacterForm.name.trim() || !newCharacterForm.id.trim() || !newCharacterForm.image) {
+      toast({ title: 'Validation Error', description: 'Name, ID, and character image are required.', variant: 'destructive' });
+      return;
+    }
+
+    setCreatingCharacter(true);
+    try {
+      const supabase = createAdminClient();
+      const timestamp = Date.now();
+      
+      // Upload main character image
+      const imageExtension = newCharacterForm.image.name.split('.').pop();
+      const imageBucket = newCharacterForm.type === 'killer' ? 'killerimages' : 'survivors';
+      const imagePath = `${newCharacterForm.id}.${imageExtension}`;
+      const imageUrl = await uploadImageToStorage(newCharacterForm.image, imageBucket, imagePath);
+      
+      // Upload background image if provided
+      let backgroundImageUrl = '';
+      if (newCharacterForm.backgroundImage) {
+        const bgExtension = newCharacterForm.backgroundImage.name.split('.').pop();
+        const bgBucket = newCharacterForm.type === 'killer' ? 'backgrounds' : 'survivorbackgrounds';
+        const bgPath = `${newCharacterForm.id}.${bgExtension}`;
+        backgroundImageUrl = await uploadImageToStorage(newCharacterForm.backgroundImage, bgBucket, bgPath);
+      }
+      
+      // Upload header image if provided
+      let headerUrl = '';
+      if (newCharacterForm.headerImage) {
+        const headerExtension = newCharacterForm.headerImage.name.split('.').pop();
+        const headerPath = `${newCharacterForm.id}-header.${headerExtension}`;
+        headerUrl = await uploadImageToStorage(newCharacterForm.headerImage, 'backgrounds', headerPath);
+      }
+      
+      // Upload artwork images if provided
+      let artistUrls: string[] = [];
+      if (newCharacterForm.artistImages.length > 0) {
+        const uploadPromises = newCharacterForm.artistImages.map(async (file, index) => {
+          const extension = file.name.split('.').pop();
+          const fileName = `${newCharacterForm.id}-artwork-${index + 1}-${timestamp}.${extension}`;
+          return uploadImageToStorage(file, 'artworks', fileName);
+        });
+        artistUrls = await Promise.all(uploadPromises);
+      }
+      
+      // Create character record
+      const tableName = newCharacterForm.type === 'killer' ? 'killers' : 'survivors';
+      const orderField = newCharacterForm.type === 'killer' ? 'order' : 'order_num';
+      const maxOrder = newCharacterForm.type === 'killer' 
+        ? Math.max(...allKillers.map(k => k.order || 0), 0)
+        : Math.max(...allSurvivors.map(s => s.order_num || 0), 0);
+      
+      const characterData = {
+        id: newCharacterForm.id,
+        name: newCharacterForm.name,
+        image_url: imageUrl,
+        background_image_url: backgroundImageUrl || null,
+        header_url: headerUrl || null,
+        artist_urls: artistUrls,
+        legacy_header_urls: [],
+        [orderField]: maxOrder + 1
+      };
+      
+      const { error: insertError } = await supabase
+        .from(tableName)
+        .insert(characterData);
+      
+      if (insertError) throw insertError;
+      
+      toast({ title: 'Success', description: `${newCharacterForm.type === 'killer' ? 'Killer' : 'Survivor'} "${newCharacterForm.name}" created successfully!` });
+      
+      // Reset form
+      setNewCharacterForm({
+        name: '',
+        id: '',
+        type: 'killer',
+        image: null,
+        backgroundImage: null,
+        headerImage: null,
+        artistImages: []
+      });
+      
+      // Refresh character data
+      await fetchAllCharacters();
+      await fetchCharacters();
+      
+    } catch (error: any) {
+      console.error('Error creating character:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to create character.', variant: 'destructive' });
+    } finally {
+      setCreatingCharacter(false);
+    }
+  };
   
-  
+  // --- RENDER LOGIC ---
+  const getCharacterName = (submission: Submission) => {
+    if (submission.killer_id) {
+      return killers.find(k => k.id === submission.killer_id)?.name || submission.killer_id;
+    } else if (submission.survivor_id) {
+      return survivors.find(s => s.id === submission.survivor_id)?.name || submission.survivor_id;
+    }
+    return 'Unknown';
+  };
+
+  const filteredSubmissions = submissions.filter(submission => {
+    const typeMatch = filter === 'all' || (filter === 'killer' && submission.killer_id) || (filter === 'survivor' && submission.survivor_id);
+    const statusMatch = statusFilter === 'all' || submission.status === statusFilter;
+    return typeMatch && statusMatch;
+  });
+
+  const sortedPlayers = useMemo(() => {
+    let players = [...p100Players];
+    if (playerSort === 'character_asc' || playerSort === 'character_desc') {
+        players.sort((a, b) => {
+            const nameA = a.killers?.name || a.survivors?.name || '';
+            const nameB = b.killers?.name || b.survivors?.name || '';
+            return playerSort === 'character_asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+        });
+    }
+    return players;
+  }, [p100Players, playerSort]);
+
+  const filteredStorageItems = storageItems.filter(item => 
+      item.path.toLowerCase().includes(filePickerSearchTerm.toLowerCase())
+  );
+
   // --- FILE PICKER FUNCTIONS ---
   const openFilePicker = (type: 'single' | 'multiple', field: 'header_url' | 'background_image_url' | 'artist_urls' | 'legacy_header_urls' | 'image_url', entityType: 'killer' | 'survivor') => {
     let defaultBucket = 'artworks';
@@ -962,63 +1252,58 @@ export default function AdminPage() {
     }
   };
 
-  // --- RENDER LOGIC ---
-  const getCharacterName = (submission: Submission) => {
-    if (submission.killer_id) {
-      return killers.find(k => k.id === submission.killer_id)?.name || submission.killer_id;
-    } else if (submission.survivor_id) {
-      return survivors.find(s => s.id === submission.survivor_id)?.name || submission.survivor_id;
-    }
-    return 'Unknown';
-  };
+  // --- DATA FETCHING FUNCTIONS (CONTINUED) ---
+  // (No changes here, just keeping the structure)
 
-  const filteredSubmissions = submissions.filter(submission => {
-    const typeMatch = filter === 'all' || (filter === 'killer' && submission.killer_id) || (filter === 'survivor' && submission.survivor_id);
-    const statusMatch = statusFilter === 'all' || submission.status === statusFilter;
-    return typeMatch && statusMatch;
-  });
+  // --- AUTHENTICATION FUNCTIONS (CONTINUED) ---
+  // (No changes here, just keeping the structure)
 
-  const sortedPlayers = useMemo(() => {
-    let players = [...p100Players];
-    if (playerSort === 'character_asc' || playerSort === 'character_desc') {
-        players.sort((a, b) => {
-            const nameA = a.killers?.name || a.survivors?.name || '';
-            const nameB = b.killers?.name || b.survivors?.name || '';
-            return playerSort === 'character_asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-        });
-    }
-    return players;
-  }, [p100Players, playerSort]);
+  // --- CRUD & MANAGEMENT FUNCTIONS (CONTINUED) ---
+  // (No changes here, just keeping the structure)
 
-  const filteredStorageItems = storageItems.filter(item => 
-      item.path.toLowerCase().includes(filePickerSearchTerm.toLowerCase())
-  );
+  // --- STORAGE & FILE FUNCTIONS (CONTINUED) ---
+  // (No changes here, just keeping the structure)
 
+  // --- RENDER LOGIC (CONTINUED) ---
+  // (No changes here, just keeping the structure)
+
+  // --- ADD LOGIN FORM BEFORE MAIN CONTENT ---
   if (!isAuthenticated) {
     return (
       <BackgroundWrapper backgroundUrl="/admin.png">
         <Navigation />
-        <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-screen">
-          <div className="max-w-md w-full bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-8">
-            <h1 className="text-2xl font-bold text-white mb-6 text-center">Admin Login</h1>
-            {loginAttempts.isLocked ? (
-              <div className="text-center">
-                <div className="text-red-400 mb-4"><p className="font-semibold">Account Locked</p><p className="text-sm">Too many failed login attempts</p></div>
-                <div className="text-white text-lg font-mono">{formatTime(lockoutTimeRemaining)}</div>
-                <p className="text-gray-400 text-sm mt-2">Time remaining</p>
+        <div className="container mx-auto px-4 py-8 max-w-md">
+          <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-8">
+            <h1 className="text-2xl font-bold text-white text-center mb-8">Admin Login</h1>
+            <form onSubmit={handleLogin} className="space-y-6">
+              <div>
+                <Label htmlFor="password" className="text-white block mb-2">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="bg-black border-red-600 text-white"
+                  disabled={authLoading || loginAttempts.isLocked}
+                  placeholder="Enter admin password..."
+                />
               </div>
-            ) : (
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <Label htmlFor="password" className="text-white">Password</Label>
-                  <Input type="password" id="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-black border-red-600 text-white focus:border-red-400" disabled={authLoading} required />
+              
+              {loginAttempts.isLocked && (
+                <div className="bg-red-900/50 border border-red-500 rounded p-3">
+                  <p className="text-red-200">Account locked</p>
+                  <p className="text-red-300 text-sm mt-1">Try again in {formatTime(lockoutTimeRemaining)}</p>
                 </div>
-                {loginAttempts.count > 0 && <p className="text-yellow-400 text-sm">{MAX_LOGIN_ATTEMPTS - loginAttempts.count} attempts remaining</p>}
-                <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white" disabled={authLoading || loginAttempts.isLocked}>
-                  {authLoading ? 'Logging in...' : 'Login'}
-                </Button>
-              </form>
-            )}
+              )}
+              
+              <Button
+                type="submit"
+                disabled={authLoading || loginAttempts.isLocked || !password.trim()}
+                className="w-full bg-red-600 hover:bg-red-700"
+              >
+                {authLoading ? 'Logging in...' : 'Login'}
+              </Button>
+            </form>
           </div>
         </div>
       </BackgroundWrapper>
@@ -1037,6 +1322,8 @@ export default function AdminPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="bg-black border border-red-600">
             <TabsTrigger value="submissions" className="data-[state=active]:bg-red-600">Submissions</TabsTrigger>
+            <TabsTrigger value="quick-artwork" className="data-[state=active]:bg-red-600">Add Artwork</TabsTrigger>
+            <TabsTrigger value="quick-character" className="data-[state=active]:bg-red-600">Add Character</TabsTrigger>
             <TabsTrigger value="killers-table" className="data-[state=active]:bg-red-600">Killers</TabsTrigger>
             <TabsTrigger value="survivors-table" className="data-[state=active]:bg-red-600">Survivors</TabsTrigger>
             <TabsTrigger value="players-table" className="data-[state=active]:bg-red-600">Players</TabsTrigger>
@@ -1062,6 +1349,13 @@ export default function AdminPage() {
                         <SelectContent className="bg-black border-red-600"><SelectItem value="all">All</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <Label className="text-white">Sort by Date</Label>
+                    <Select value={submissionSort} onValueChange={(value) => setSubmissionSort(value as any)}>
+                        <SelectTrigger className="bg-black border-red-600 text-white w-32 ml-2"><SelectValue /></SelectTrigger>
+                        <SelectContent className="bg-black border-red-600"><SelectItem value="newest">Newest First</SelectItem><SelectItem value="oldest">Oldest First</SelectItem></SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <Dialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
                     <DialogTrigger asChild>
@@ -1080,7 +1374,7 @@ export default function AdminPage() {
                                 <strong> approved</strong> and <strong>rejected</strong> submissions?
                             </p>
                             <p className="mt-2 font-bold text-yellow-400">
-                                This will permanently delete{' '}
+                                This will permanently delete {' '}
                                 {
                                     submissions.filter(s => (s.status === 'approved' || s.status === 'rejected') && s.screenshot_url).length
                                 }{' '}
@@ -1106,7 +1400,7 @@ export default function AdminPage() {
               {loading ? <div className="text-center text-white py-8">Loading submissions...</div> : (
                 <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow className="border-red-600"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow className="border-red-600"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Comment</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {filteredSubmissions.length > 0 ? filteredSubmissions.map((submission) => (
                       <TableRow key={submission.id} className="border-red-600/20">
@@ -1121,6 +1415,15 @@ export default function AdminPage() {
                             <span className="text-gray-500">None</span>
                           )}
                         </TableCell>
+                        <TableCell className="max-w-xs">
+                          {submission.comment ? (
+                            <div className="text-gray-300 text-sm truncate" title={submission.comment}>
+                              {submission.comment}
+                            </div>
+                          ) : (
+                            <span className="text-gray-500 text-sm">None</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {submission.status === 'pending' && (
@@ -1131,6 +1434,12 @@ export default function AdminPage() {
                                   <DialogContent className="bg-black border-red-600">
                                     <DialogHeader><DialogTitle className="text-white">Reject Submission</DialogTitle></DialogHeader>
                                     <div className="space-y-4">
+                                      {submission.comment && (
+                                        <div className="bg-blue-900/20 border border-blue-500 rounded p-3">
+                                          <Label className="text-blue-300 text-sm font-semibold">Submitter's Comment:</Label>
+                                          <p className="text-white text-sm mt-1">{submission.comment}</p>
+                                        </div>
+                                      )}
                                       <Label className="text-white">Rejection Reason (Optional)</Label>
                                       <Input id={`rejection-${submission.id}`} placeholder="Enter reason..." className="bg-black border-red-600 text-white" />
                                       <Button onClick={() => { const reason = (document.getElementById(`rejection-${submission.id}`) as HTMLInputElement).value; updateSubmissionStatus(submission.id, 'rejected', reason); }} className="bg-red-600 hover:bg-red-700 w-full">Confirm Rejection</Button>
@@ -1155,12 +1464,297 @@ export default function AdminPage() {
                         </TableCell>
                       </TableRow>
                     )) : (
-                      <TableRow><TableCell colSpan={6} className="text-center text-gray-400 py-8">No submissions found for the selected filters.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-8">No submissions found for the selected filters.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
                 </div>
               )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="quick-artwork" className="space-y-6">
+            <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
+              <h2 className="text-2xl font-bold text-white mb-6">Quick Add Artwork</h2>
+              <div className="max-w-2xl mx-auto space-y-6">
+                <div className="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
+                  <h3 className="text-blue-300 font-semibold mb-2">How to Use:</h3>
+                  <ol className="text-blue-100 text-sm space-y-1 list-decimal list-inside">
+                    <li>Upload your artwork file</li>
+                    <li>Select which character page it belongs to</li>
+                    <li>Select the artist from the database</li>
+                    <li>Choose where to place it (Gallery, Header, or Legacy Header)</li>
+                    <li>Click "Upload Artwork" - Done!</li>
+                  </ol>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="artwork-upload" className="text-white block mb-2">Artwork File *</Label>
+                      <input
+                        type="file"
+                        id="artwork-upload"
+                        accept="image/*"
+                        onChange={(e) => setArtworkUploadForm({
+                          ...artworkUploadForm,
+                          artworkFile: e.target.files?.[0] || null
+                        })}
+                        className="w-full p-3 border border-red-600 rounded-lg bg-black text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-red-600 file:text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Character *</Label>
+                      <Select 
+                        value={artworkUploadForm.characterId} 
+                        onValueChange={(value) => {
+                          const isKiller = allKillers.some(k => k.id === value);
+                          const isSurvivor = allSurvivors.some(s => s.id === value);
+                          setArtworkUploadForm({
+                            ...artworkUploadForm,
+                            characterId: value,
+                            characterType: isKiller ? 'killer' : 'survivor'
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="bg-black border-red-600 text-white">
+                          <SelectValue placeholder="Select character..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-black border-red-600">
+                          <SelectGroup>
+                            <SelectLabel>Killers</SelectLabel>
+                            {allKillers.map(k => (
+                              <SelectItem key={k.id} value={k.id}>{k.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Survivors</SelectLabel>
+                            {allSurvivors.map(s => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-white block mb-2">Artist *</Label>
+                      <Select 
+                        value={artworkUploadForm.artistId} 
+                        onValueChange={(value) => {
+                          const selectedArtist = artists.find(a => a.id === value);
+                          setArtworkUploadForm({
+                            ...artworkUploadForm,
+                            artistId: value,
+                            artistName: selectedArtist?.name || ''
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="bg-black border-red-600 text-white">
+                          <SelectValue placeholder="Select artist..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-black border-red-600">
+                          {artists.map(artist => (
+                            <SelectItem key={artist.id} value={artist.id}>
+                              {artist.name}
+                              <span className="text-gray-400 ml-2">({artist.platform})</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Placement</Label>
+                      <Select 
+                        value={artworkUploadForm.placement} 
+                        onValueChange={(value: 'gallery' | 'header' | 'legacy_header') => 
+                          setArtworkUploadForm({ ...artworkUploadForm, placement: value })
+                        }
+                      >
+                        <SelectTrigger className="bg-black border-red-600 text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-black border-red-600">
+                          <SelectItem value="gallery">Gallery (Sidebar)</SelectItem>
+                          <SelectItem value="header">Header Image</SelectItem>
+                          <SelectItem value="legacy_header">Legacy Header</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {artworkUploadForm.artistId && (
+                  <div className="bg-green-900/20 border border-green-500 rounded-lg p-4">
+                    <h4 className="text-green-300 font-semibold mb-2">Selected Artist:</h4>
+                    <div className="text-green-100">
+                      <p><strong>Name:</strong> {artworkUploadForm.artistName}</p>
+                      <p><strong>Platform:</strong> {artists.find(a => a.id === artworkUploadForm.artistId)?.platform}</p>
+                      <p><strong>URL:</strong> <a href={artists.find(a => a.id === artworkUploadForm.artistId)?.url} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:underline">{artists.find(a => a.id === artworkUploadForm.artistId)?.url}</a></p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-center pt-4">
+                  <Button
+                    onClick={uploadArtworkToCharacter}
+                    disabled={uploadingArtwork || !artworkUploadForm.artworkFile || !artworkUploadForm.characterId || !artworkUploadForm.artistId}
+                    className="bg-green-600 hover:bg-green-700 px-8 py-3"
+                  >
+                    {uploadingArtwork ? 'Uploading Artwork...' : 'Upload Artwork'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="quick-character" className="space-y-6">
+            <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
+              <h2 className="text-2xl font-bold text-white mb-6">Quick Add New Character</h2>
+              <div className="max-w-2xl mx-auto space-y-6">
+                <div className="bg-green-900/20 border border-green-500 rounded-lg p-4">
+                  <h3 className="text-green-300 font-semibold mb-2">Perfect for TWD or New Chapter Releases!</h3>
+                  <ol className="text-green-100 text-sm space-y-1 list-decimal list-inside">
+                    <li>Enter character name and unique ID</li>
+                    <li>Choose if it's a Killer or Survivor</li>
+                    <li>Upload the main character image (required)</li>
+                    <li>Optionally upload background, header, and artwork files</li>
+                    <li>Click "Create Character" - The page will be ready!</li>
+                  </ol>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-white block mb-2">Character Name *</Label>
+                      <Input
+                        value={newCharacterForm.name}
+                        onChange={(e) => setNewCharacterForm({
+                          ...newCharacterForm,
+                          name: e.target.value
+                        })}
+                        placeholder="e.g., The Governor"
+                        className="bg-black border-red-600 text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Character ID * (URL slug)</Label>
+                      <Input
+                        value={newCharacterForm.id}
+                        onChange={(e) => setNewCharacterForm({
+                          ...newCharacterForm,
+                          id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+                        })}
+                        placeholder="e.g., the-governor"
+                        className="bg-black border-red-600 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">This will be the URL: /killers/the-governor</p>
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Character Type *</Label>
+                      <Select 
+                        value={newCharacterForm.type} 
+                        onValueChange={(value: 'killer' | 'survivor') => 
+                          setNewCharacterForm({ ...newCharacterForm, type: value })
+                        }
+                      >
+                        <SelectTrigger className="bg-black border-red-600 text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-black border-red-600">
+                          <SelectItem value="killer">Killer</SelectItem>
+                          <SelectItem value="survivor">Survivor</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-white block mb-2">Character Image * (Portrait)</Label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setNewCharacterForm({
+                          ...newCharacterForm,
+                          image: e.target.files?.[0] || null
+                        })}
+                        className="w-full p-2 border border-red-600 rounded-lg bg-black text-white file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-red-600 file:text-white text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Background Image (Optional)</Label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setNewCharacterForm({
+                          ...newCharacterForm,
+                          backgroundImage: e.target.files?.[0] || null
+                        })}
+                        className="w-full p-2 border border-red-600 rounded-lg bg-black text-white file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-red-600 file:text-white text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Header Image (Optional)</Label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setNewCharacterForm({
+                          ...newCharacterForm,
+                          headerImage: e.target.files?.[0] || null
+                        })}
+                        className="w-full p-2 border border-red-600 rounded-lg bg-black text-white file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-red-600 file:text-white text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-white block mb-2">Artwork Files (Optional)</Label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => setNewCharacterForm({
+                          ...newCharacterForm,
+                          artistImages: Array.from(e.target.files || [])
+                        })}
+                        className="w-full p-2 border border-red-600 rounded-lg bg-black text-white file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-red-600 file:text-white text-sm"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">You can select multiple files</p>
+                    </div>
+                  </div>
+                </div>
+
+                {newCharacterForm.artistImages.length > 0 && (
+                  <div className="bg-black/50 rounded-lg p-4">
+                    <h4 className="text-white mb-2">Selected Artwork Files:</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {Array.from(newCharacterForm.artistImages).map((file, index) => (
+                        <div key={index} className="text-sm text-gray-300 truncate">
+                          {index + 1}. {file.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-center pt-4">
+                  <Button
+                    onClick={createNewCharacter}
+                    disabled={creatingCharacter}
+                    className="bg-green-600 hover:bg-green-700 px-8 py-3"
+                  >
+                    {creatingCharacter ? 'Creating Character...' : 'Create Character'}
+                  </Button>
+                </div>
+              </div>
             </div>
           </TabsContent>
 
@@ -1255,17 +1849,18 @@ export default function AdminPage() {
                         </div>
                     )}
                     <Table>
-                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {sortedPlayers.length > 0 ? sortedPlayers.map((player) => (<TableRow key={player.id} className="border-red-600/30">
                             <TableCell className="text-white font-medium">{player.username}</TableCell>
                             <TableCell className="text-gray-400">{player.killers?.name || player.survivors?.name}</TableCell>
                             <TableCell className="text-gray-400">{player.killer_id ? 'Killer' : 'Survivor'}</TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.p200 ? 'bg-purple-600' : 'bg-gray-600'}`}>{player.p200 ? 'P200' : 'P100'}</span></TableCell>
+                            <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.legacy ? 'bg-orange-600' : 'bg-gray-600'}`}>{player.legacy ? 'Legacy' : 'Standard'}</span></TableCell>
                             <TableCell className="text-gray-400">{new Date(player.added_at).toLocaleDateString()}</TableCell>
                             <TableCell><div className="flex gap-2"><Button onClick={() => setEditingPlayer(player)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deletePlayer(player.id)} disabled={deletingItem === player.id} size="sm" variant="destructive">{deletingItem === player.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                         </TableRow>)) : (
-                            <TableRow><TableCell colSpan={6} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
                         )}
                       </TableBody>
                     </Table>
@@ -1296,7 +1891,7 @@ export default function AdminPage() {
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
                 <h2 className="text-2xl font-bold text-white mb-6">Storage Manager</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                    <div><Label className="text-white">Storage Bucket</Label><Select value={selectedBucket} onValueChange={setSelectedBucket}><SelectTrigger className="bg-black border-red-600 text-white"><SelectValue/></SelectTrigger><SelectContent className="bg-black border-red-600">{buckets.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select></div>
+                    <div><Label className="text-white">Storage Bucket</Label><Select value={selectedBucket} onValueChange={setSelectedBucket}><SelectTrigger className="bg-black border-red-600 text-white mt-1"><SelectValue/></SelectTrigger><SelectContent className="bg-black border-red-600">{buckets.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select></div>
                     <div><Label className="text-white">Upload Files to Root</Label><div className="border-2 border-dashed border-red-600/50 rounded-lg p-6 text-center cursor-pointer hover:border-red-600" onDrop={handleFileDrop} onDragOver={(e) => e.preventDefault()} onClick={() => document.getElementById('file-upload')?.click()}><input id="file-upload" type="file" multiple onChange={handleFileSelect} className="hidden"/><p className="text-gray-400">{uploadingFiles.length > 0 ? `Uploading ${uploadingFiles.length} file(s)...` : 'Drag & drop or click to upload'}</p></div></div>
                     <div><Label className="text-white">Quick Actions</Label><div className="space-y-2"><Button onClick={createFolder} className="w-full bg-green-600 hover:bg-green-700">Create Folder</Button></div></div>
                 </div>
@@ -1426,12 +2021,13 @@ export default function AdminPage() {
                             </Select>
                         </div>
                         <div className="flex items-center space-x-2"><input type="checkbox" id="p200" checked={!!editingPlayer.p200} onChange={(e) => setEditingPlayer({...editingPlayer, p200: e.target.checked})} /><Label htmlFor="p200" className="text-white">P200 Status</Label></div>
+                        <div className="flex items-center space-x-2"><input type="checkbox" id="legacy" checked={!!editingPlayer.legacy} onChange={(e) => setEditingPlayer({...editingPlayer, legacy: e.target.checked})} /><Label htmlFor="legacy" className="text-white">Legacy Status</Label></div>
                         <div className="flex gap-2"><Button onClick={() => savePlayer(editingPlayer)} className="bg-green-600 hover:bg-green-700">Save</Button><Button onClick={() => setEditingPlayer(null)} variant="outline" className="border-red-600 text-white hover:bg-red-900">Cancel</Button></div>
                     </div>
                 </DialogContent>
             </Dialog>
         )}
-        
+
         {editingArtist && (
             <Dialog open={!!editingArtist} onOpenChange={() => setEditingArtist(null)}>
                 <DialogContent className="bg-black border-red-600 max-w-lg"><DialogHeader><DialogTitle className="text-white">{editingArtist.id ? 'Edit Artist' : 'Add New Artist'}</DialogTitle></DialogHeader>
@@ -1489,7 +2085,7 @@ export default function AdminPage() {
                       }, {} as { [key: string]: StorageItem[] })).map(([folder, items]) => (
                           <div key={folder}>
                               <h4 className="text-white text-lg font-medium mb-2 sticky top-0 bg-black/80 backdrop-blur-sm py-1">{folder}</h4>
-                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                   {items.map((item) => {
                                       const isSelected = selectedFiles.includes(item.publicUrl);
                                       return (

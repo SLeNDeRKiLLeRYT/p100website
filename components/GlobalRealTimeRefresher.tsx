@@ -65,7 +65,7 @@ export default function GlobalRealtimeRefresher() {
             
       .subscribe();
 
-    console.log('GlobalRealtimeRefresher: Subscribed to killers, survivors, and artists tables.');
+    console.log('GlobalRealtimeRefresher: Subscribed to killers, survivors, artists, p100_players, and p100_submissions tables.');
 
     // Cleanup subscription on component unmount
     return () => {
