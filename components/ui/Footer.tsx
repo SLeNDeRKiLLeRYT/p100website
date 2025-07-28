@@ -3,7 +3,7 @@ import { FaDiscord, FaTwitter, FaTwitch, FaReddit } from "react-icons/fa";
 
 export default function Footer() {
   return (
-    <footer className="mt-auto py-8 border-t border-red-600/30">
+    <footer className="relative z-10 mt-auto py-8 border-t border-red-600/30">
       <div className="container mx-auto px-4">
         <div className="text-center">
           <p className="text-lg mb-4 font-mono">Links to my social networks, if you wish to contact me about anything on this site:</p>
