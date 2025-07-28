@@ -1,3 +1,5 @@
+// components/ui/Navigation.tsx
+
 "use client";
 
 import Link from "next/link";
@@ -15,7 +17,8 @@ export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideC
   const pathname = usePathname();
   
   return (
-    <nav className="flex gap-4 mb-8">
+    // FIX: Removed mb-8 (margin-bottom) as spacing is now handled by the page layout.
+    <nav className="flex gap-4">
       {!hideHome && (
         <Link href="/" className={`nav-button ${pathname === "/" ? "active" : ""}`}>
           HOME
@@ -23,13 +26,13 @@ export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideC
       )}
       
       {!hideKillers && (
-        <Link href="/killers" className={`nav-button ${pathname === "/killers" ? "active" : ""}`}>
+        <Link href="/killers" className={`nav-button ${pathname.startsWith("/killers") ? "active" : ""}`}>
           KILLERS
         </Link>
       )}
       
       {!hideSurvivors && (
-        <Link href="/survivors" className={`nav-button ${pathname === "/survivors" ? "active" : ""}`}>
+        <Link href="/survivors" className={`nav-button ${pathname.startsWith("/survivors") ? "active" : ""}`}>
           SURVIVORS
         </Link>
       )}

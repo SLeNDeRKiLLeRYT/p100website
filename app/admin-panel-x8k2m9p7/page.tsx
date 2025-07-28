@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, notFound } from 'next/navigation';
-import { createClient, createAdminClient, sanitizeInput, validateInput } from '@/lib/supabase-client';
+import supabase, { createAdminClient, sanitizeInput, validateInput } from '@/lib/supabase-client';
 // You will need to export updateArtist from your service file
 import { getArtists, createArtist, deleteArtist, updateArtist, Artist, ArtistInsert } from '@/lib/artists-service';
 import Navigation from '@/components/ui/Navigation';
@@ -309,8 +309,7 @@ export default function AdminPage() {
   };
   
   const fetchCharacters = async () => {
-    try {
-      const supabase = createClient();
+    try { 
       const [killersRes, survivorsRes] = await Promise.all([
         supabase.from('killers').select('id, name, image_url').order('order'),
         supabase.from('survivors').select('id, name, image_url').order('order_num')
@@ -327,7 +326,6 @@ export default function AdminPage() {
 
   const fetchAllCharacters = async () => {
     try {
-      const supabase = createClient();
       const [killersRes, survivorsRes] = await Promise.all([
         supabase.from('killers').select('*').order('name'),
         supabase.from('survivors').select('*').order('name')
@@ -344,7 +342,6 @@ export default function AdminPage() {
 
   const fetchSubmissions = async () => {
     try {
-      const supabase = createClient();
       const { data, error } = await supabase
         .from('p100_submissions')
         .select('id, username, killer_id, survivor_id, screenshot_url, status, rejection_reason, submitted_at, comment, legacy') // --- ADDED comment and legacy ---
@@ -362,7 +359,6 @@ export default function AdminPage() {
     setIsPlayersLoading(true);
 
     try {
-        const supabase = createClient();
         let query = supabase
             .from('p100_players')
             .select('*, killers(name), survivors(name)');
@@ -763,7 +759,7 @@ export default function AdminPage() {
   const fetchArtists = async () => {
     try {
       const supabase = createAdminClient();
-      const artistsData = await getArtists(supabase, true);
+      const artistsData = await getArtists(supabase);
       setArtists(artistsData);
     } catch (error) {
       console.error('Error fetching artists:', error);
@@ -928,7 +924,6 @@ export default function AdminPage() {
         const { error: moveError } = await supabaseAdmin.storage.from(bucket).move(oldPath, newPath);
         if (moveError) throw new Error(`Storage error: ${moveError.message}`);
 
-        const supabase = createClient();
         const { data: { publicUrl: oldPublicUrl } } = supabase.storage.from(bucket).getPublicUrl(oldPath);
         const { data: { publicUrl: newPublicUrl } } = supabase.storage.from(bucket).getPublicUrl(newPath);
 

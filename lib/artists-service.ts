@@ -1,10 +1,11 @@
 // lib/artists-service.ts
 
-// Make sure to export SupabaseClient type if you haven't already
 import { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from './supabase-client'; // We might still need this for public fetches elsewhere
+// FIX: Import the default singleton instance.
+// We can name it whatever we want here, but `supabase` is standard.
+import supabase from './supabase-client';
 
-// --- Interfaces (keep as they are) ---
+// --- Interfaces (No changes needed) ---
 export interface Artist {
   id: string;
   name: string;
@@ -19,17 +20,14 @@ export interface ArtistInsert {
   url: string;
 }
 
-// --- REFACTORED FUNCTIONS ---
+// --- FUNCTIONS (No changes needed in the function bodies themselves) ---
 
 /**
  * Fetches artists from the database.
- * @param supabase - The Supabase client instance to use (can be public or admin).
- * @param isAdmin - A flag to decide if it should bypass RLS (not needed if passing admin client).
+ * @param supabaseClient - The Supabase client instance to use (can be public or admin).
  */
-export async function getArtists(supabase: SupabaseClient, isAdmin = false): Promise<Artist[]> {
-  // The 'isAdmin' flag is now redundant if you pass the admin client, but we can keep it for clarity.
-  // The important part is which `supabase` instance is passed in.
-  const { data, error } = await supabase
+export async function getArtists(supabaseClient: SupabaseClient): Promise<Artist[]> {
+  const { data, error } = await supabaseClient
     .from('artists')
     .select('*')
     .order('name', { ascending: true });
@@ -44,13 +42,13 @@ export async function getArtists(supabase: SupabaseClient, isAdmin = false): Pro
 /**
  * Creates a new artist.
  * **Must be called with an admin client.**
- * @param supabase - The Supabase admin client instance.
+ * @param supabaseClient - The Supabase admin client instance.
  * @param artistData - The data for the new artist.
  */
-export async function createArtist(supabase: SupabaseClient, artistData: ArtistInsert) {
-  const { data, error } = await supabase
+export async function createArtist(supabaseClient: SupabaseClient, artistData: ArtistInsert) {
+  const { data, error } = await supabaseClient
     .from('artists')
-    .insert(artistData)
+    .insert([artistData]) // Ensure it's an array for consistency
     .select()
     .single();
 
@@ -64,12 +62,12 @@ export async function createArtist(supabase: SupabaseClient, artistData: ArtistI
 /**
  * Updates an existing artist.
  * **Must be called with an admin client.**
- * @param supabase - The Supabase admin client instance.
+ * @param supabaseClient - The Supabase admin client instance.
  * @param artistId - The ID of the artist to update.
  * @param artistData - The new data for the artist.
  */
-export async function updateArtist(supabase: SupabaseClient, artistId: string, artistData: Partial<ArtistInsert>) {
-    const { data, error } = await supabase
+export async function updateArtist(supabaseClient: SupabaseClient, artistId: string, artistData: Partial<ArtistInsert>) {
+    const { data, error } = await supabaseClient
         .from('artists')
         .update(artistData)
         .eq('id', artistId)
@@ -83,15 +81,14 @@ export async function updateArtist(supabase: SupabaseClient, artistId: string, a
     return data;
 }
 
-
 /**
  * Deletes an artist.
  * **Must be called with an admin client.**
- * @param supabase - The Supabase admin client instance.
+ * @param supabaseClient - The Supabase admin client instance.
  * @param artistId - The ID of the artist to delete.
  */
-export async function deleteArtist(supabase: SupabaseClient, artistId: string) {
-  const { error } = await supabase.from('artists').delete().eq('id', artistId);
+export async function deleteArtist(supabaseClient: SupabaseClient, artistId: string) {
+  const { error } = await supabaseClient.from('artists').delete().eq('id', artistId);
 
   if (error) {
     console.error('Error deleting artist:', error);

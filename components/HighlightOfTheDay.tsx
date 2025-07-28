@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase-client';
+import supabase from '@/lib/supabase-client';
 import { Star, Crown, Shield } from 'lucide-react';
 
 // Interface for a single character, including added_at for sorting
@@ -27,42 +27,36 @@ export default function HighlightOfTheDay() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const fetchHighlightPlayer = async () => {
+      setIsLoading(true);
+      try {
+        // FIX: Use the imported singleton instance
+        const { data, error } = await supabase.rpc('get_highlight_of_the_day');
+
+        if (error) {
+          console.error('Error fetching highlight of the day from RPC:', error);
+          return;
+        }
+        
+        if (data) {
+          setHighlightPlayer({
+            ...data,
+            killers: data.killers || [],
+            survivors: data.survivors || [],
+          });
+        } else {
+          setHighlightPlayer(null);
+        }
+
+      } catch (rpcError) {
+        console.error('RPC call to get_highlight_of_the_day failed:', rpcError);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     fetchHighlightPlayer();
   }, []);
-
-  const fetchHighlightPlayer = async () => {
-    setIsLoading(true);
-    try {
-      const supabase = createClient();
-      
-      // ONE single, clean RPC call to our database function.
-      // This is fast, efficient, and atomic.
-      const { data, error } = await supabase.rpc('get_highlight_of_the_day');
-
-      if (error) {
-        console.error('Error fetching highlight of the day from RPC:', error);
-        return;
-      }
-      
-      // The `data` variable is the complete, accurate player profile or null.
-      // Supabase's `json_agg` returns null for empty sets, so we convert to empty arrays.
-      if (data) {
-        setHighlightPlayer({
-          ...data,
-          killers: data.killers || [],
-          survivors: data.survivors || [],
-        });
-      } else {
-        // This handles the case where the function returns null (no eligible players)
-        setHighlightPlayer(null);
-      }
-
-    } catch (rpcError) {
-      console.error('RPC call to get_highlight_of_the_day failed:', rpcError);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Loading state remains the same
   if (isLoading) {

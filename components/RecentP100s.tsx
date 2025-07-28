@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase-client';
+import supabase from '@/lib/supabase-client';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface RecentP100 {
@@ -29,86 +29,61 @@ export default function RecentP100s() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const fetchRecentP100s = async () => {
+      try {
+        // FIX: Use the imported singleton instance
+        const { data: players, error } = await supabase
+          .from('p100_players')
+          .select('id, username, killer_id, survivor_id, added_at')
+          .order('added_at', { ascending: false })
+          .limit(7);
+
+        if (error) {
+          console.error('Error fetching recent P100s:', error);
+          setIsLoading(false);
+          return;
+        }
+
+        if (!players || players.length === 0) {
+          setIsLoading(false);
+          return;
+        }
+
+        const killerIds = Array.from(new Set(players.map(p => p.killer_id).filter(Boolean)));
+        const survivorIds = Array.from(new Set(players.map(p => p.survivor_id).filter(Boolean)));
+
+        const [killersResponse, survivorsResponse] = await Promise.all([
+          killerIds.length > 0 ? supabase.from('killers').select('id, name, image_url').in('id', killerIds) : Promise.resolve({ data: [], error: null }),
+          survivorIds.length > 0 ? supabase.from('survivors').select('id, name, image_url').in('id', survivorIds) : Promise.resolve({ data: [], error: null }),
+        ]);
+
+        if (killersResponse.error) console.error('Error fetching killers:', killersResponse.error);
+        if (survivorsResponse.error) console.error('Error fetching survivors:', survivorsResponse.error);
+
+        const enrichedPlayers = players
+          .map((player): RecentP100 => {
+            let character: RecentP100['character'] = undefined;
+            if (player.killer_id) {
+              const killer = killersResponse.data?.find(k => k.id === player.killer_id);
+              if (killer) character = { ...killer, type: 'killer' };
+            } else if (player.survivor_id) {
+              const survivor = survivorsResponse.data?.find(s => s.id === player.survivor_id);
+              if (survivor) character = { ...survivor, type: 'survivor' };
+            }
+            return { id: player.id, username: player.username, submitted_at: player.added_at, character };
+          })
+          .filter((player): player is EnrichedP100 => !!player.character);
+
+        setRecentP100s(enrichedPlayers);
+      } catch (error) {
+        console.error('Error in fetchRecentP100s:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     fetchRecentP100s();
   }, []);
-
-  // NOTE: The auto-advancing useEffect hook with setInterval has been removed.
-
-  const fetchRecentP100s = async () => {
-    try {
-      const supabase = createClient();
-      
-      const { data: players, error } = await supabase
-        .from('p100_players')
-        .select('id, username, killer_id, survivor_id, added_at')
-        .order('added_at', { ascending: false })
-        .limit(7);
-
-      if (error) {
-        console.error('Error fetching recent P100s:', error);
-        setIsLoading(false);
-        return;
-      }
-
-      if (!players || players.length === 0) {
-        setIsLoading(false);
-        return;
-      }
-
-      const killerIds = Array.from(new Set(players.map(p => p.killer_id).filter(Boolean)));
-      const survivorIds = Array.from(new Set(players.map(p => p.survivor_id).filter(Boolean)));
-
-      const characterPromises = [];
-      
-      if (killerIds.length > 0) {
-        characterPromises.push(
-          supabase.from('killers').select('id, name, image_url').in('id', killerIds)
-        );
-      } else {
-        characterPromises.push(Promise.resolve({ data: [], error: null }));
-      }
-      
-      if (survivorIds.length > 0) {
-        characterPromises.push(
-          supabase.from('survivors').select('id, name, image_url').in('id', survivorIds)
-        );
-      } else {
-        characterPromises.push(Promise.resolve({ data: [], error: null }));
-      }
-
-      const [killersResponse, survivorsResponse] = await Promise.all(characterPromises);
-
-      if (killersResponse.error) console.error('Error fetching killers:', killersResponse.error);
-      if (survivorsResponse.error) console.error('Error fetching survivors:', survivorsResponse.error);
-
-      const enrichedPlayers = players
-        .map((player): RecentP100 => {
-          let character: RecentP100['character'] = undefined;
-          
-          if (player.killer_id) {
-            const killer = killersResponse.data?.find(k => k.id === player.killer_id);
-            if (killer) character = { ...killer, type: 'killer' as const };
-          } else if (player.survivor_id) {
-            const survivor = survivorsResponse.data?.find(s => s.id === player.survivor_id);
-            if (survivor) character = { ...survivor, type: 'survivor' as const };
-          }
-
-          return {
-            id: player.id,
-            username: player.username,
-            submitted_at: player.added_at,
-            character
-          };
-        })
-        .filter((player): player is EnrichedP100 => !!player.character);
-
-      setRecentP100s(enrichedPlayers);
-    } catch (error) {
-      console.error('Error in fetchRecentP100s:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const slideToIndex = (newIndex: number) => {
     setCurrentIndex(newIndex);

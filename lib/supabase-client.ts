@@ -1,214 +1,62 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-// Type definitions for database 
+// Type definitions for your database schema (no changes needed here)
 export type Database = {
   public: {
     Tables: {
-      killers: {        Row: {
-          id: string;
-          name: string;
-          image_url: string;
-          order: number | null;
-          background_image_url: string | null;
-          created_at: string;
-          updated_at: string;
-          header_url: string | null;
-          artist_urls: string[] | null;
-          legacy_header_urls: string[] | null;
-        };        Insert: {
-          id: string;
-          name: string;
-          image_url: string;
-          order?: number | null;
-          background_image_url?: string | null;
-          created_at?: string;
-          updated_at?: string;
-          header_url?: string | null;
-          artist_urls?: string[] | null;
-          legacy_header_urls?: string[] | null;
-        };        Update: {
-          id?: string;
-          name?: string;
-          image_url?: string;
-          order?: number | null;
-          background_image_url?: string | null;
-          created_at?: string;
-          updated_at?: string;
-          header_url?: string | null;
-          artist_urls?: string[] | null;
-          legacy_header_urls?: string[] | null;
-        };
-      };
-      survivors: {        Row: {
-          id: string;
-          name: string;
-          image_url: string;
-          order_num: number | null;
-          background_image_url: string | null;
-          created_at: string;
-          updated_at: string;
-          header_url: string | null;
-          artist_urls: string[] | null;
-          legacy_header_urls: string[] | null;
-        };        Insert: {
-          id: string;
-          name: string;
-          image_url: string;
-          order_num?: number | null;
-          background_image_url?: string | null;
-          created_at?: string;
-          updated_at?: string;
-          header_url?: string | null;
-          artist_urls?: string[] | null;
-          legacy_header_urls?: string[] | null;
-        };        Update: {
-          id?: string;
-          name?: string;
-          image_url?: string;
-          order_num?: number | null;
-          background_image_url?: string | null;
-          created_at?: string;
-          updated_at?: string;
-          header_url?: string | null;
-          artist_urls?: string[] | null;
-          legacy_header_urls?: string[] | null;
-        };
-      };
-      p100_players: {
-        Row: {
-          id: string; // UUID as string
-          username: string;
-          killer_id: string | null;
-          survivor_id: string | null;
-          added_at: string; // timestamp as string
-          p200: boolean | null; // true if player is P200 (got p100 twice on the same character)
-        };
-        Insert: {
-          id?: string;
-          username: string;
-          killer_id?: string | null;
-          survivor_id?: string | null;
-          added_at?: string;
-          p200: boolean | null; // true if player is P200 (got p100 twice on the same character)
-        };
-        Update: {
-          id?: string;
-          username?: string;
-          killer_id?: string | null;
-          survivor_id?: string | null;
-          added_at?: string;
-          p200: boolean | null; // true if player is P200 (got p100 twice on the same character)
-        };      };      p100_submissions: {
-        Row: {
-          id: string;
-          username: string;
-          killer_id: string | null;
-          survivor_id: string | null;
-          screenshot_url: string;
-          status: 'pending' | 'approved' | 'rejected';
-          rejection_reason: string | null;
-          submitted_at: string;
-          reviewed_at: string | null;
-          reviewed_by: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          username: string;
-          killer_id?: string | null;
-          survivor_id?: string | null;
-          screenshot_url: string;
-          status?: 'pending' | 'approved' | 'rejected';
-          rejection_reason?: string | null;
-          submitted_at?: string;
-          reviewed_at?: string | null;
-          reviewed_by?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          username?: string;
-          killer_id?: string | null;
-          survivor_id?: string | null;
-          screenshot_url?: string;
-          status?: 'pending' | 'approved' | 'rejected';
-          rejection_reason?: string | null;
-          submitted_at?: string;
-          reviewed_at?: string | null;
-          reviewed_by?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      artists: {
-        Row: {
-          id: string;
-          name: string;
-          url: string;
-          platform: 'twitter' | 'instagram' | 'youtube';
-          slug: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          name: string;
-          url: string;
-          platform: 'twitter' | 'instagram' | 'youtube';
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          url?: string;
-          platform?: 'twitter' | 'instagram' | 'youtube';
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
+      killers: { Row: { id: string; name: string; image_url: string; order: number | null; background_image_url: string | null; created_at: string; updated_at: string; header_url: string | null; artist_urls: string[] | null; legacy_header_urls: string[] | null; }; Insert: { id: string; name: string; image_url: string; order?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; Update: { id?: string; name?: string; image_url?: string; order?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; };
+      survivors: { Row: { id: string; name: string; image_url: string; order_num: number | null; background_image_url: string | null; created_at: string; updated_at: string; header_url: string | null; artist_urls: string[] | null; legacy_header_urls: string[] | null; }; Insert: { id: string; name: string; image_url: string; order_num?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; Update: { id?: string; name?: string; image_url?: string; order_num?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; };
+      p100_players: { Row: { id: string; username: string; killer_id: string | null; survivor_id: string | null; added_at: string; p200: boolean | null; }; Insert: { id?: string; username: string; killer_id?: string | null; survivor_id?: string | null; added_at?: string; p200: boolean | null; }; Update: { id?: string; username?: string; killer_id?: string | null; survivor_id?: string | null; added_at?: string; p200: boolean | null; }; };
+      p100_submissions: { Row: { id: string; username: string; killer_id: string | null; survivor_id: string | null; screenshot_url: string; status: 'pending' | 'approved' | 'rejected'; rejection_reason: string | null; submitted_at: string; reviewed_at: string | null; reviewed_by: string | null; created_at: string; updated_at: string; }; Insert: { id?: string; username: string; killer_id?: string | null; survivor_id?: string | null; screenshot_url: string; status?: 'pending' | 'approved' | 'rejected'; rejection_reason?: string | null; submitted_at?: string; reviewed_at?: string | null; reviewed_by?: string | null; created_at?: string; updated_at?: string; }; Update: { id?: string; username?: string; killer_id?: string | null; survivor_id?: string | null; screenshot_url?: string; status?: 'pending' | 'approved' | 'rejected'; rejection_reason?: string | null; submitted_at?: string; reviewed_at?: string | null; reviewed_by?: string | null; created_at?: string; updated_at?: string; }; };
+      artists: { Row: { id: string; name: string; url: string; platform: 'twitter' | 'instagram' | 'youtube'; slug: string; created_at: string; updated_at: string; }; Insert: { id?: string; name: string; url: string; platform: 'twitter' | 'instagram' | 'youtube'; created_at?: string; updated_at?: string; }; Update: { id?: string; name?: string; url?: string; platform?: 'twitter' | 'instagram' | 'youtube'; created_at?: string; updated_at?: string; }; };
     };
   };
 };
 
-// Create a single supabase client for interacting with your database
-export const createClient = () => {
+// =========================================================================
+// SINGLETON CLIENT FOR BROWSER COMPONENTS ('use client')
+// =========================================================================
+
+// This helper function creates the client but is NOT exported.
+const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   
   if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Supabase URL and key must be defined in environment variables');
+    throw new Error('Supabase URL and anonymous key must be defined in environment variables');
   }
   
-  return createSupabaseClient<Database>(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: typeof window !== 'undefined', // Only persist session on client side
-    },
-  });
+  return createSupabaseClient<Database>(supabaseUrl, supabaseKey, supabaseServiceKey ? {
+    auth: { persistSession: false },
+  } : {});
 };
 
-// For server components - prevents issues with WebSocket dependencies
+// Create ONE single instance of the Supabase client for the browser.
+const supabase = createClient();
+
+// Export the singleton instance as the default export.
+export default supabase;
+
+// =========================================================================
+// FACTORY FUNCTIONS FOR SERVER & ADMIN (These are fine as they are)
+// =========================================================================
+
 export const createServerClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('Supabase URL and key must be defined in environment variables');
   }
   
   return createSupabaseClient<Database>(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-    },
-    global: {
-      fetch: fetch, // Use native fetch
-    },
+    auth: { persistSession: false },
+    global: { fetch: fetch },
   });
 };
 
-// For admin operations - uses service role key to bypass RLS
 export const createAdminClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
@@ -217,17 +65,16 @@ export const createAdminClient = () => {
     throw new Error('Supabase URL and service role key must be defined in environment variables');
   }
   
-  return createSupabaseClient<Database>(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-    },
-    global: {
-      fetch: fetch,
-    },
-  });
+  return createSupabaseClient<Database>(supabaseUrl, supabaseServiceKey, supabaseServiceKey ? {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: fetch },
+  } : {});
 };
 
-// Input validation utilities
+// =========================================================================
+// UTILITY FUNCTIONS (No changes needed)
+// =========================================================================
+
 export const validateInput = {
   username: (username: string): boolean => {
     return typeof username === 'string' && 
@@ -253,7 +100,6 @@ export const validateInput = {
   }
 };
 
-// Sanitize input to prevent XSS
 export const sanitizeInput = (input: string): string => {
   return input
     .trim()
@@ -262,7 +108,7 @@ export const sanitizeInput = (input: string): string => {
         '<': '&lt;',
         '>': '&gt;',
         '"': '&quot;',
-        "'": '&#x27;',
+        "'": '&#39;',
         '&': '&amp;'
       };
       return entityMap[char] || char;

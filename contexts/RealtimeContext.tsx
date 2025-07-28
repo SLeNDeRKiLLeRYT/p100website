@@ -2,15 +2,16 @@
 
 import { createContext, useContext, ReactNode } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase-client';
-import { Database } from '@/lib/supabase-client';
+// FIX: Import the singleton instance and the Database type
+import supabase, { Database } from '@/lib/supabase-client';
 
 const SupabaseContext = createContext<SupabaseClient<Database> | undefined>(
   undefined
 );
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
-  const supabase = createClient();
+  // FIX: Do not create a new client. Provide the imported singleton.
+  // const supabase = createClient(); 
   return (
     <SupabaseContext.Provider value={supabase}>
       {children}

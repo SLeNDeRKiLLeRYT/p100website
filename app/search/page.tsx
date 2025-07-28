@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/ui/Navigation';
 import BackgroundWrapper from '@/components/BackgroundWrapper';
 import { Search, User } from 'lucide-react';
-import { createClient } from '@/lib/supabase-client';
+import supabase from '@/lib/supabase-client';
 
 interface Suggestion {
   username: string;
@@ -19,47 +19,34 @@ export default function SearchPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   
-  const supabase = createClient();
-
-  // --- UPDATED AND OPTIMIZED useEffect ---
   useEffect(() => {
     const term = searchTerm.trim();
-
     if (term.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       setIsSearching(false);
       return;
     }
-
     setIsSearching(true);
-
     const timer = setTimeout(async () => {
       try {
-        // Call the database function instead of doing a broad select
         const { data, error } = await supabase
           .rpc('search_players', { search_term: term });
-
         if (error) {
           throw error;
         }
-
-        // The data is already in the correct format: { username: string, p100Count: number }[]
-        // No client-side processing needed!
         setSuggestions(data || []);
         setShowSuggestions(data && data.length > 0);
-
       } catch (error) {
         console.error("Failed to fetch suggestions via RPC:", error);
-        setSuggestions([]); // Ensure suggestions are cleared on error
+        setSuggestions([]);
         setShowSuggestions(false);
       } finally {
         setIsSearching(false);
       }
-    }, 300); // 300ms debounce timer
-
+    }, 300);
     return () => clearTimeout(timer);
-  }, [searchTerm, supabase]);
+  }, [searchTerm]);
 
 
   const handleSearch = (username: string) => {
@@ -75,9 +62,14 @@ export default function SearchPage() {
   };
 
   return (
+    // FIX: The entire page content is now wrapped by BackgroundWrapper
     <BackgroundWrapper>
-      <Navigation />
-      <main className="container mx-auto px-4 py-8">
+      {/* FIX: The Navigation is now a child of BackgroundWrapper, so it appears on top of the background */}
+      <div className="container mx-auto px-4 pt-8">
+        <Navigation />
+      </div>
+      
+      <main className="container mx-auto px-4 pb-8">
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-mono mb-8 text-center">
             Player Search

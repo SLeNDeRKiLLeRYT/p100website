@@ -52,9 +52,9 @@ export function useImagePreload(options: UseImagePreloadOptions = {}) {
     if (!enabled) return;
 
     try {
-      // Import the createClient function dynamically to avoid SSR issues
-      const { createClient } = await import('@/lib/supabase-client');
-      const supabase = createClient();
+      // FIX: Dynamically import the module to get the default export
+      const supabaseModule = await import('@/lib/supabase-client');
+      const supabase = supabaseModule.default; // Access the default export instance
 
       if (route === '/killers') {
         const { data } = await supabase
@@ -84,53 +84,53 @@ export function useImagePreload(options: UseImagePreloadOptions = {}) {
               preloadImage(survivor.image_url).catch(console.error);
             }
           });
-        }      } else if (route.startsWith('/killers/')) {
+        }
+      } else if (route.startsWith('/killers/')) {
         const characterId = route.split('/').pop();
         if (characterId) {
-          const characterResponse = await supabase
+          const { data } = await supabase
             .from('killers')
             .select('image_url, background_image_url, header_url, legacy_header_urls')
             .eq('id', characterId)
             .single();
 
-          if (characterResponse.data) {
+          if (data) {
             [
-              characterResponse.data.image_url,
-              characterResponse.data.background_image_url,
-              characterResponse.data.header_url
+              data.image_url,
+              data.background_image_url,
+              data.header_url
             ].forEach(url => {
               if (url) preloadImage(url).catch(console.error);
             });
             
-            // Preload legacy header URLs
-            if (characterResponse.data.legacy_header_urls && Array.isArray(characterResponse.data.legacy_header_urls)) {
-              characterResponse.data.legacy_header_urls.forEach(url => {
+            if (data.legacy_header_urls && Array.isArray(data.legacy_header_urls)) {
+              data.legacy_header_urls.forEach(url => {
                 if (url && typeof url === 'string') {
                   preloadImage(url).catch(console.error);
                 }
               });
             }
           }
-        }      } else if (route.startsWith('/survivors/')) {
+        }
+      } else if (route.startsWith('/survivors/')) {
         const characterId = route.split('/').pop();
         if (characterId) {
-          const characterResponse = await supabase
+          const { data } = await supabase
             .from('survivors')
             .select('image_url, background_image_url, legacy_header_urls')
             .eq('id', characterId)
             .single();
 
-          if (characterResponse.data) {
+          if (data) {
             [
-              characterResponse.data.image_url,
-              characterResponse.data.background_image_url
+              data.image_url,
+              data.background_image_url
             ].forEach(url => {
               if (url) preloadImage(url).catch(console.error);
             });
             
-            // Preload legacy header URLs
-            if (characterResponse.data.legacy_header_urls && Array.isArray(characterResponse.data.legacy_header_urls)) {
-              characterResponse.data.legacy_header_urls.forEach(url => {
+            if (data.legacy_header_urls && Array.isArray(data.legacy_header_urls)) {
+              data.legacy_header_urls.forEach(url => {
                 if (url && typeof url === 'string') {
                   preloadImage(url).catch(console.error);
                 }
@@ -147,13 +147,11 @@ export function useImagePreload(options: UseImagePreloadOptions = {}) {
   const handleLinkHover = (href: string) => {
     if (!preloadOnHover || !enabled) return;
 
-    // Clear any existing timer for this URL
     const existingTimer = hoverTimers.current.get(href);
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
-    // Set a new timer
     const timer = setTimeout(() => {
       preloadRouteImages(href);
       router.prefetch(href);
@@ -170,15 +168,14 @@ export function useImagePreload(options: UseImagePreloadOptions = {}) {
     }
   };
 
-  // Setup global link hover listeners
   useEffect(() => {
-    if (!preloadOnHover || !enabled) return;    const handleMouseEnter = (event: MouseEvent) => {
-      const target = event.target;
-      if (!target || !(target instanceof Element)) return;
-      
+    if (!preloadOnHover || !enabled) return;
+    
+    const handleMouseEnter = (event: MouseEvent) => {
+      const target = event.target as Element;
       const link = target.closest('a[href]') as HTMLAnchorElement;
       
-      if (link && link.href) {
+      if (link?.href) {
         const url = new URL(link.href);
         if (url.origin === window.location.origin) {
           handleLinkHover(url.pathname);
@@ -187,12 +184,10 @@ export function useImagePreload(options: UseImagePreloadOptions = {}) {
     };
 
     const handleMouseLeave = (event: MouseEvent) => {
-      const target = event.target;
-      if (!target || !(target instanceof Element)) return;
-      
+      const target = event.target as Element;
       const link = target.closest('a[href]') as HTMLAnchorElement;
       
-      if (link && link.href) {
+      if (link?.href) {
         const url = new URL(link.href);
         if (url.origin === window.location.origin) {
           handleLinkLeave(url.pathname);
@@ -206,12 +201,10 @@ export function useImagePreload(options: UseImagePreloadOptions = {}) {
     return () => {
       document.removeEventListener('mouseenter', handleMouseEnter, true);
       document.removeEventListener('mouseleave', handleMouseLeave, true);
-      
-      // Clear all timers
       hoverTimers.current.forEach(timer => clearTimeout(timer));
       hoverTimers.current.clear();
     };
-  }, [preloadOnHover, enabled, preloadDelay]);
+  }, [preloadOnHover, enabled, preloadDelay, router]); // router added to dependency array
 
   return {
     preloadImage,
