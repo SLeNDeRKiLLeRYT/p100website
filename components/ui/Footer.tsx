@@ -10,7 +10,7 @@ export default function Footer() {
 
           <div className="flex gap-4 mb-2 justify-center">
             <Link
-              href="https://discord.com/invite/9eNxdY4"
+              href="https://discord.gg/GFPuzehJZs"
               target="_blank"
               className="transition-transform duration-300 ease-in-out hover:scale-125"
             >
