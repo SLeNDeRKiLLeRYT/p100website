@@ -166,7 +166,7 @@ export default function HighlightOfTheDay() {
         {/* Call to Action */}
         <div className="text-center pt-4 border-t border-yellow-600/30">
           <Link 
-            href={`/search?q=${encodeURIComponent(highlightPlayer.username)}`}
+            href={`/profile/${encodeURIComponent(highlightPlayer.username)}`}
             className="inline-block bg-yellow-600 hover:bg-yellow-700 text-black font-semibold px-4 py-2 rounded-lg transition-colors"
           >
             View Full Profile →
