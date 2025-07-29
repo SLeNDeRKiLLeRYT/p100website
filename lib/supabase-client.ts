@@ -7,7 +7,7 @@ export type Database = {
       killers: { Row: { id: string; name: string; image_url: string; order: number | null; background_image_url: string | null; created_at: string; updated_at: string; header_url: string | null; artist_urls: string[] | null; legacy_header_urls: string[] | null; }; Insert: { id: string; name: string; image_url: string; order?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; Update: { id?: string; name?: string; image_url?: string; order?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; };
       survivors: { Row: { id: string; name: string; image_url: string; order_num: number | null; background_image_url: string | null; created_at: string; updated_at: string; header_url: string | null; artist_urls: string[] | null; legacy_header_urls: string[] | null; }; Insert: { id: string; name: string; image_url: string; order_num?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; Update: { id?: string; name?: string; image_url?: string; order_num?: number | null; background_image_url?: string | null; created_at?: string; updated_at?: string; header_url?: string | null; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; }; };
       p100_players: { Row: { id: string; username: string; killer_id: string | null; survivor_id: string | null; added_at: string; p200: boolean | null; }; Insert: { id?: string; username: string; killer_id?: string | null; survivor_id?: string | null; added_at?: string; p200: boolean | null; }; Update: { id?: string; username?: string; killer_id?: string | null; survivor_id?: string | null; added_at?: string; p200: boolean | null; }; };
-      p100_submissions: { Row: { id: string; username: string; killer_id: string | null; survivor_id: string | null; screenshot_url: string; status: 'pending' | 'approved' | 'rejected'; rejection_reason: string | null; submitted_at: string; reviewed_at: string | null; reviewed_by: string | null; created_at: string; updated_at: string; }; Insert: { id?: string; username: string; killer_id?: string | null; survivor_id?: string | null; screenshot_url: string; status?: 'pending' | 'approved' | 'rejected'; rejection_reason?: string | null; submitted_at?: string; reviewed_at?: string | null; reviewed_by?: string | null; created_at?: string; updated_at?: string; }; Update: { id?: string; username?: string; killer_id?: string | null; survivor_id?: string | null; screenshot_url?: string; status?: 'pending' | 'approved' | 'rejected'; rejection_reason?: string | null; submitted_at?: string; reviewed_at?: string | null; reviewed_by?: string | null; created_at?: string; updated_at?: string; }; };
+      p100_submissions: { Row: { id: string; username: string; killer_id: string | null; survivor_id: string | null; screenshot_url: string; status: 'pending' | 'approved' | 'rejected'; rejection_reason: string | null; submitted_at: string; reviewed_at: string | null; reviewed_by: string | null; created_at: string; updated_at: string; comment: string | null; legacy: boolean | null; }; Insert: { id?: string; username: string; killer_id?: string | null; survivor_id?: string | null; screenshot_url: string; status?: 'pending' | 'approved' | 'rejected'; rejection_reason?: string | null; submitted_at?: string; reviewed_at?: string | null; reviewed_by?: string | null; created_at?: string; updated_at?: string; comment?: string | null; legacy?: boolean | null; }; Update: { id?: string; username?: string; killer_id?: string | null; survivor_id?: string | null; screenshot_url?: string; status?: 'pending' | 'approved' | 'rejected'; rejection_reason?: string | null; submitted_at?: string; reviewed_at?: string | null; reviewed_by?: string | null; created_at?: string; updated_at?: string; comment?: string | null; legacy?: boolean | null; }; };
       artists: { Row: { id: string; name: string; url: string; platform: 'twitter' | 'instagram' | 'youtube'; slug: string; created_at: string; updated_at: string; }; Insert: { id?: string; name: string; url: string; platform: 'twitter' | 'instagram' | 'youtube'; created_at?: string; updated_at?: string; }; Update: { id?: string; name?: string; url?: string; platform?: 'twitter' | 'instagram' | 'youtube'; created_at?: string; updated_at?: string; }; };
     };
   };
@@ -101,15 +101,17 @@ export const validateInput = {
 };
 
 export const sanitizeInput = (input: string): string => {
+  if (!input) return '';
   return input
     .trim()
-    .replace(/[<>'"&]/g, (char) => {
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+    .replace(/javascript:/gi, '') // Remove javascript: URLs
+    .replace(/on\w+\s*=\s*['"]/gi, '') // Remove event handlers
+    .replace(/[<>]/g, (char) => {
+      // Only escape angle brackets, allow other special characters
       const entityMap: Record<string, string> = {
         '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-        '&': '&amp;'
+        '>': '&gt;'
       };
       return entityMap[char] || char;
     });

@@ -9,6 +9,29 @@ import Link from 'next/link';
 import { FaDiscord } from 'react-icons/fa';
 import { User } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import DOMPurify from 'dompurify';
+
+// Safe sanitization for comments - allows emojis, symbols, but prevents XSS
+const sanitizeComment = (comment: string): string => {
+  if (typeof window !== 'undefined' && comment) {
+    return DOMPurify.sanitize(comment, {
+      ALLOWED_TAGS: [], // No HTML tags allowed
+      ALLOWED_ATTR: [], // No attributes allowed
+      KEEP_CONTENT: true, // Keep text content including emojis and special characters
+      ALLOW_DATA_ATTR: false,
+      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+      FORBID_ATTR: ['onerror', 'onclick', 'onload', 'onmouseover', 'onmouseout', 'onfocus', 'onblur']
+    });
+  }
+  // Server-side fallback - keep most characters, just remove dangerous patterns
+  if (!comment) return '';
+  return comment
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=\s*['"]/gi, '')
+    .trim();
+};
 
 // Interfaces
 interface Character {
@@ -172,7 +195,7 @@ export default function SubmissionPage() {
         killer_id: formData.characterType === 'killer' ? formData.characterId : null,
         survivor_id: formData.characterType === 'survivor' ? formData.characterId : null,
         status: 'pending' as const,
-        comment: sanitizeInput(formData.comment),
+        comment: sanitizeComment(formData.comment),
       };
 
       const { error: submitError } = await supabase.from('p100_submissions').insert([submissionData]);

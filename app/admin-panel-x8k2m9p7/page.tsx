@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -16,7 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ChevronLeft, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, Pencil, Eye, EyeOff } from 'lucide-react';
+import DOMPurify from 'dompurify';
 
 // Interfaces
 interface Submission {
@@ -28,8 +30,8 @@ interface Submission {
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason?: string;
   submitted_at: string;
-  comment?: string; // --- ADDED ---
-  legacy?: boolean; // Add legacy field
+  comment?: string;
+  legacy?: boolean;
 }
 
 interface Character {
@@ -54,9 +56,38 @@ interface LoginAttempts {
   isLocked: boolean;
 }
 
+interface SubmissionStats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
 // Rate limiting configuration
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+const SUBMISSIONS_PAGE_SIZE = 100;
+
+// Safe sanitization for comments - allows emojis, symbols, but prevents XSS
+const sanitizeComment = (comment: string): string => {
+  if (typeof window !== 'undefined') {
+    return DOMPurify.sanitize(comment, {
+      ALLOWED_TAGS: [], // No HTML tags allowed
+      ALLOWED_ATTR: [], // No attributes allowed
+      KEEP_CONTENT: true, // Keep text content
+      ALLOW_DATA_ATTR: false,
+      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+      FORBID_ATTR: ['onerror', 'onclick', 'onload', 'onmouseover', 'onmouseout', 'onfocus', 'onblur']
+    });
+  }
+  // Server-side fallback - only remove dangerous patterns, keep special characters
+  return comment
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=\s*['"]/gi, '')
+    .trim();
+};
 
 // Helper to format lockout time
 const formatTime = (seconds: number) => {
@@ -117,6 +148,8 @@ export default function AdminPage() {
   const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPlayersLoading, setIsPlayersLoading] = useState(false);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  const [isSubmissionsLoadingMore, setIsSubmissionsLoadingMore] = useState(false);
 
   // Data States
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -126,6 +159,7 @@ export default function AdminPage() {
   const [allSurvivors, setAllSurvivors] = useState<any[]>([]);
   const [p100Players, setP100Players] = useState<any[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
+  const [submissionStats, setSubmissionStats] = useState<SubmissionStats>({ total: 0, pending: 0, approved: 0, rejected: 0 });
   
   // UI State
   const [activeTab, setActiveTab] = useState('submissions');
@@ -141,6 +175,11 @@ export default function AdminPage() {
   // Rate Limiting State
   const [loginAttempts, setLoginAttempts] = useState<LoginAttempts>({ count: 0, lastAttempt: 0, isLocked: false });
   const [lockoutTimeRemaining, setLockoutTimeRemaining] = useState(0);
+
+  // Pagination State for Submissions
+  const [submissionsOffset, setSubmissionsOffset] = useState(0);
+  const [hasMoreSubmissions, setHasMoreSubmissions] = useState(true);
+  const [filteredSubmissionsCount, setFilteredSubmissionsCount] = useState(0);
   
   // Dialog and Editing States
   const [editingKiller, setEditingKiller] = useState<any>(null);
@@ -148,6 +187,9 @@ export default function AdminPage() {
   const [editingPlayer, setEditingPlayer] = useState<any>(null);
   const [editingArtist, setEditingArtist] = useState<any>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  
+  // Comment state
+  const [commentToShow, setCommentToShow] = useState<{ id: string; comment: string } | null>(null);
   
   // Management States
   const [deletingItem, setDeletingItem] = useState<string | null>(null);
@@ -205,20 +247,15 @@ export default function AdminPage() {
 
   // Initial Auth Check and Data Fetch
   useEffect(() => {
-    // Check if user is already authenticated in this session
     const isSessionAuthenticated = sessionStorage.getItem('admin_authenticated') === 'true';
-    
     if (isSessionAuthenticated) {
       setIsAuthenticated(true);
       fetchInitialData();
     }
-    
-    // Handle login attempts tracking
     const attempts = localStorage.getItem('admin_login_attempts');
     if (attempts) {
       const parsedAttempts = JSON.parse(attempts) as LoginAttempts;
       const now = Date.now();
-      
       if (parsedAttempts.isLocked && (now - parsedAttempts.lastAttempt) < LOCKOUT_DURATION) {
         setLoginAttempts(parsedAttempts);
         setLockoutTimeRemaining(Math.ceil((LOCKOUT_DURATION - (now - parsedAttempts.lastAttempt)) / 1000));
@@ -233,21 +270,20 @@ export default function AdminPage() {
   // Debounced effect to re-fetch players when filters change
   useEffect(() => {
       if (!isAuthenticated) return;
-      
       const handler = setTimeout(() => {
           fetchP100Players();
       }, 300);
-
       return () => {
           clearTimeout(handler);
       };
   }, [playerSearchTerm, selectedCharacterId, playerSort, isAuthenticated]);
 
-  // Re-fetch submissions when sort order changes
+  // Re-fetch submissions when filters or sort order changes
   useEffect(() => {
       if (!isAuthenticated) return;
-      fetchSubmissions();
-  }, [submissionSort, isAuthenticated]);
+      // When filters change, always reset and fetch from the beginning
+      fetchSubmissions(true);
+  }, [submissionSort, filter, statusFilter, isAuthenticated]);
 
   // Lockout Timer
   useEffect(() => {
@@ -283,7 +319,7 @@ export default function AdminPage() {
   // Re-fetch files in picker when bucket changes
   useEffect(() => {
       if (showFilePicker) {
-          setFilePickerSearchTerm(''); // Reset on bucket change
+          setFilePickerSearchTerm('');
           fetchStorageItems(filePickerBucket);
       }
   }, [filePickerBucket, showFilePicker]);
@@ -299,13 +335,27 @@ export default function AdminPage() {
   const fetchInitialData = async () => {
     setLoading(true);
     await Promise.all([
-      fetchSubmissions(),
+      fetchSubmissions(true),
+      fetchSubmissionStats(),
       fetchCharacters(),
       fetchAllCharacters(),
       fetchArtists(),
       fetchStorageItems(selectedBucket)
     ]);
     setLoading(false);
+  };
+
+  const fetchSubmissionStats = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_submission_stats').single();
+      if (error) throw error;
+      if (data && typeof data === 'object' && 'total' in data) {
+        setSubmissionStats(data as SubmissionStats);
+      }
+    } catch (error) {
+      console.error('Error fetching submission stats:', error);
+      toast({ title: 'Error', description: 'Failed to fetch submission statistics', variant: 'destructive' });
+    }
   };
   
   const fetchCharacters = async () => {
@@ -340,17 +390,67 @@ export default function AdminPage() {
     }
   };
 
-  const fetchSubmissions = async () => {
+  const fetchSubmissions = async (reset: boolean = false) => {
+    if (reset) {
+      setSubmissionsLoading(true);
+      setSubmissions([]);
+      setSubmissionsOffset(0);
+      setHasMoreSubmissions(true);
+    } else {
+      setIsSubmissionsLoadingMore(true);
+    }
+  
+    const currentOffset = reset ? 0 : submissionsOffset;
+  
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('p100_submissions')
-        .select('id, username, killer_id, survivor_id, screenshot_url, status, rejection_reason, submitted_at, comment, legacy') // --- ADDED comment and legacy ---
-        .order('submitted_at', { ascending: submissionSort === 'oldest' });
+        .select('id, username, killer_id, survivor_id, screenshot_url, status, rejection_reason, submitted_at, reviewed_at, reviewed_by, comment, legacy', { count: 'exact' });
+      
+      // Apply server-side filters
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+      if (filter === 'killer') {
+        query = query.not('killer_id', 'is', null);
+      } else if (filter === 'survivor') {
+        query = query.not('survivor_id', 'is', null);
+      }
+
+      const { data, error, count } = await query
+        .order('submitted_at', { ascending: submissionSort === 'oldest' })
+        .range(currentOffset, currentOffset + SUBMISSIONS_PAGE_SIZE - 1);
+      
       if (error) throw error;
-      setSubmissions(data || []);
+  
+      if (reset && count !== null) {
+        setFilteredSubmissionsCount(count);
+      }
+
+      if (data) {
+        if (reset) {
+          setSubmissions(data);
+        } else {
+          setSubmissions(prev => [...prev, ...data]);
+        }
+        
+        if (data.length < SUBMISSIONS_PAGE_SIZE) {
+          setHasMoreSubmissions(false);
+        } else {
+          setSubmissionsOffset(currentOffset + SUBMISSIONS_PAGE_SIZE);
+        }
+      } else {
+        setHasMoreSubmissions(false);
+      }
     } catch (error) {
       console.error('Error fetching submissions:', error);
       toast({ title: 'Error', description: 'Failed to fetch submissions', variant: 'destructive' });
+    } finally {
+      if (reset) {
+        setSubmissionsLoading(false);
+      } else {
+        setIsSubmissionsLoadingMore(false);
+      }
     }
   };
 
@@ -463,7 +563,6 @@ export default function AdminPage() {
     setAuthLoading(true);
     if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
       setIsAuthenticated(true);
-      // Store authentication in sessionStorage (persists during session, cleared when browser/tab closes)
       sessionStorage.setItem('admin_authenticated', 'true');
       const resetAttempts = { count: 0, lastAttempt: 0, isLocked: false };
       setLoginAttempts(resetAttempts);
@@ -489,7 +588,6 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    // Clear session authentication
     sessionStorage.removeItem('admin_authenticated');
     setSubmissions([]);
     setKillers([]);
@@ -513,7 +611,6 @@ export default function AdminPage() {
         .eq('id', submissionId)
         .throwOnError();
       
-      // Update the local state
       setSubmissions(currentSubmissions =>
         currentSubmissions.map(s => s.id === submissionId ? { ...s, legacy: legacyStatus } : s)
       );
@@ -538,12 +635,19 @@ export default function AdminPage() {
       const submission = submissions.find(s => s.id === id);
       if (!submission) return;
 
-      await supabase.from('p100_submissions').update({ status, rejection_reason: status === 'rejected' ? sanitizeInput(rejectionReason || '') : null }).eq('id', id).throwOnError();
+      const safeRejectionReason = rejectionReason ? sanitizeComment(rejectionReason) : null;
+      
+      await supabase.from('p100_submissions').update({ 
+        status, 
+        rejection_reason: status === 'rejected' ? safeRejectionReason : null,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: 'admin'
+      }).eq('id', id).throwOnError();
 
       if (status === 'approved') {
         const characterColumn = submission.killer_id ? 'killer_id' : 'survivor_id';
         const characterId = submission.killer_id || submission.survivor_id;
-        const sanitizedUsername = sanitizeInput(submission.username);
+        const sanitizedUsername = sanitizeComment(submission.username);
         
         const { data: existingPlayer } = await supabase.from('p100_players').select('id').eq('username', sanitizedUsername).eq(characterColumn, characterId).single();
 
@@ -552,12 +656,13 @@ export default function AdminPage() {
             username: sanitizedUsername, 
             [characterColumn]: characterId, 
             p200: false,
-            legacy: false // Always set to false, legacy status is managed elsewhere
+            legacy: false
           }).throwOnError();
         }
       }
       toast({ title: 'Success', description: `Submission ${status}.` });
-      await fetchSubmissions();
+      await fetchSubmissions(true);
+      await fetchSubmissionStats();
       await fetchP100Players();
     } catch (error) {
       console.error(`Error updating submission:`, error);
@@ -641,7 +746,8 @@ export default function AdminPage() {
         if (dbError) throw dbError;
         
         toast({ title: 'Success', description: `Successfully deleted ${pathsToDelete.length} screenshots.` });
-        await fetchSubmissions();
+        await fetchSubmissions(true);
+        await fetchSubmissionStats();
 
     } catch (error: any) {
         console.error('Error during bulk screenshot deletion:', error);
@@ -726,7 +832,6 @@ export default function AdminPage() {
     try {
       const supabase = createAdminClient();
       const { id, killers, survivors, ...updateData } = playerData;
-      // The line below has been changed to remove sanitization for admin input.
       updateData.username = updateData.username.trim();
 
       if (id && p100Players.find(p => p.id === id)) {
@@ -1004,10 +1109,8 @@ export default function AdminPage() {
       const fileExtension = artworkUploadForm.artworkFile.name.split('.').pop();
       const fileName = `${artworkUploadForm.characterId}-${artistSlug}-${timestamp}-by-${artistSlug}.${fileExtension}`;
       
-      // Upload to artworks bucket
       const artworkUrl = await uploadImageToStorage(artworkUploadForm.artworkFile, 'artworks', fileName);
       
-      // Update character record based on placement
       const tableName = artworkUploadForm.characterType === 'killer' ? 'killers' : 'survivors';
       const { data: character, error: fetchError } = await supabase
         .from(tableName)
@@ -1038,7 +1141,6 @@ export default function AdminPage() {
       
       toast({ title: 'Success', description: 'Artwork uploaded and added to character successfully!' });
       
-      // Reset form
       setArtworkUploadForm({
         artworkFile: null,
         characterId: '',
@@ -1048,7 +1150,6 @@ export default function AdminPage() {
         placement: 'gallery'
       });
       
-      // Refresh character data
       await fetchAllCharacters();
       
     } catch (error: any) {
@@ -1071,13 +1172,11 @@ export default function AdminPage() {
       const supabase = createAdminClient();
       const timestamp = Date.now();
       
-      // Upload main character image
       const imageExtension = newCharacterForm.image.name.split('.').pop();
       const imageBucket = newCharacterForm.type === 'killer' ? 'killerimages' : 'survivors';
       const imagePath = `${newCharacterForm.id}.${imageExtension}`;
       const imageUrl = await uploadImageToStorage(newCharacterForm.image, imageBucket, imagePath);
       
-      // Upload background image if provided
       let backgroundImageUrl = '';
       if (newCharacterForm.backgroundImage) {
         const bgExtension = newCharacterForm.backgroundImage.name.split('.').pop();
@@ -1086,7 +1185,6 @@ export default function AdminPage() {
         backgroundImageUrl = await uploadImageToStorage(newCharacterForm.backgroundImage, bgBucket, bgPath);
       }
       
-      // Upload header image if provided
       let headerUrl = '';
       if (newCharacterForm.headerImage) {
         const headerExtension = newCharacterForm.headerImage.name.split('.').pop();
@@ -1094,7 +1192,6 @@ export default function AdminPage() {
         headerUrl = await uploadImageToStorage(newCharacterForm.headerImage, 'backgrounds', headerPath);
       }
       
-      // Upload artwork images if provided
       let artistUrls: string[] = [];
       if (newCharacterForm.artistImages.length > 0) {
         const uploadPromises = newCharacterForm.artistImages.map(async (file, index) => {
@@ -1105,7 +1202,6 @@ export default function AdminPage() {
         artistUrls = await Promise.all(uploadPromises);
       }
       
-      // Create character record
       const tableName = newCharacterForm.type === 'killer' ? 'killers' : 'survivors';
       const orderField = newCharacterForm.type === 'killer' ? 'order' : 'order_num';
       const maxOrder = newCharacterForm.type === 'killer' 
@@ -1131,7 +1227,6 @@ export default function AdminPage() {
       
       toast({ title: 'Success', description: `${newCharacterForm.type === 'killer' ? 'Killer' : 'Survivor'} "${newCharacterForm.name}" created successfully!` });
       
-      // Reset form
       setNewCharacterForm({
         name: '',
         id: '',
@@ -1142,7 +1237,6 @@ export default function AdminPage() {
         artistImages: []
       });
       
-      // Refresh character data
       await fetchAllCharacters();
       await fetchCharacters();
       
@@ -1163,12 +1257,6 @@ export default function AdminPage() {
     }
     return 'Unknown';
   };
-
-  const filteredSubmissions = submissions.filter(submission => {
-    const typeMatch = filter === 'all' || (filter === 'killer' && submission.killer_id) || (filter === 'survivor' && submission.survivor_id);
-    const statusMatch = statusFilter === 'all' || submission.status === statusFilter;
-    return typeMatch && statusMatch;
-  });
 
   const sortedPlayers = useMemo(() => {
     let players = [...p100Players];
@@ -1247,22 +1335,6 @@ export default function AdminPage() {
     }
   };
 
-  // --- DATA FETCHING FUNCTIONS (CONTINUED) ---
-  // (No changes here, just keeping the structure)
-
-  // --- AUTHENTICATION FUNCTIONS (CONTINUED) ---
-  // (No changes here, just keeping the structure)
-
-  // --- CRUD & MANAGEMENT FUNCTIONS (CONTINUED) ---
-  // (No changes here, just keeping the structure)
-
-  // --- STORAGE & FILE FUNCTIONS (CONTINUED) ---
-  // (No changes here, just keeping the structure)
-
-  // --- RENDER LOGIC (CONTINUED) ---
-  // (No changes here, just keeping the structure)
-
-  // --- ADD LOGIN FORM BEFORE MAIN CONTENT ---
   if (!isAuthenticated) {
     return (
       <BackgroundWrapper backgroundUrl="/admin.png">
@@ -1328,6 +1400,28 @@ export default function AdminPage() {
 
           <TabsContent value="submissions" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
+              <div className="mb-6 bg-blue-900/20 border border-blue-500 rounded-lg p-4">
+                <h3 className="text-white font-semibold mb-2">Submission Statistics</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-blue-300">Total Submissions</div>
+                    <div className="text-white font-bold text-lg">{submissionStats.total}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-yellow-300">Pending</div>
+                    <div className="text-white font-bold text-lg">{submissionStats.pending}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-green-300">Approved</div>
+                    <div className="text-white font-bold text-lg">{submissionStats.approved}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-red-300">Rejected</div>
+                    <div className="text-white font-bold text-lg">{submissionStats.rejected}</div>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
                 <div className="flex flex-wrap gap-4">
                   <div>
@@ -1392,12 +1486,16 @@ export default function AdminPage() {
                 </Dialog>
               </div>
 
-              {loading ? <div className="text-center text-white py-8">Loading submissions...</div> : (
+              {submissionsLoading ? <div className="text-center text-white py-8">Loading submissions...</div> : (
+                <>
                 <div className="overflow-x-auto">
+                <div className="mb-4 text-sm text-gray-400">
+                  Showing {submissions.length} of {filteredSubmissionsCount} submissions
+                </div>
                 <Table>
                   <TableHeader><TableRow className="border-red-600"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Comment</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {filteredSubmissions.length > 0 ? filteredSubmissions.map((submission) => (
+                    {submissions.length > 0 ? submissions.map((submission) => (
                       <TableRow key={submission.id} className="border-red-600/20">
                         <TableCell className="text-white">{submission.username}</TableCell>
                         <TableCell className="text-white">{getCharacterName(submission)}</TableCell>
@@ -1412,8 +1510,24 @@ export default function AdminPage() {
                         </TableCell>
                         <TableCell className="max-w-xs">
                           {submission.comment ? (
-                            <div className="text-gray-300 text-sm truncate" title={submission.comment}>
-                              {submission.comment}
+                            <div className="text-gray-300 text-sm">
+                              {submission.comment.length > 25 ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate max-w-[120px]" title={submission.comment}>
+                                    {submission.comment.substring(0, 25)}...
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="p-1 h-6 w-6 text-blue-400 hover:text-blue-300"
+                                    onClick={() => setCommentToShow({ id: submission.id, comment: submission.comment || '' })}
+                                  >
+                                    <Eye size={12} />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span>{submission.comment}</span>
+                              )}
                             </div>
                           ) : (
                             <span className="text-gray-500 text-sm">None</span>
@@ -1464,6 +1578,18 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
                 </div>
+                {hasMoreSubmissions && !submissionsLoading && (
+                  <div className="mt-6 text-center">
+                    <Button
+                      onClick={() => fetchSubmissions(false)}
+                      disabled={isSubmissionsLoadingMore}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      {isSubmissionsLoadingMore ? 'Loading More...' : 'Load More Submissions'}
+                    </Button>
+                  </div>
+                )}
+                </>
               )}
             </div>
           </TabsContent>
@@ -2122,6 +2248,31 @@ export default function AdminPage() {
                         <div className="flex justify-end gap-2">
                             <Button onClick={() => setRenamingItem(null)} variant="outline" className="border-red-600 text-white hover:bg-red-900" disabled={isRenaming}>Cancel</Button>
                             <Button onClick={handleRename} className="bg-blue-600 hover:bg-blue-700" disabled={isRenaming}>{isRenaming ? 'Renaming...' : 'Rename'}</Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        )}
+
+        {commentToShow && (
+            <Dialog open={!!commentToShow} onOpenChange={() => setCommentToShow(null)}>
+                <DialogContent className="bg-black border-red-600 max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-white">Full Comment</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="bg-gray-900/50 border border-gray-600 rounded-lg p-4 max-h-80 overflow-y-auto">
+                            <p className="text-white whitespace-pre-wrap break-words leading-relaxed">
+                                {commentToShow.comment}
+                            </p>
+                        </div>
+                        <div className="flex justify-end">
+                            <Button 
+                                onClick={() => setCommentToShow(null)} 
+                                className="bg-red-600 hover:bg-red-700"
+                            >
+                                Close
+                            </Button>
                         </div>
                     </div>
                 </DialogContent>
