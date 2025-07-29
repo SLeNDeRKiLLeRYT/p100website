@@ -31,11 +31,12 @@ export default function RecentP100s() {
   useEffect(() => {
     const fetchRecentP100s = async () => {
       try {
-        // FIX: Use the imported singleton instance
-        const { data: players, error } = await supabase
-          .from('p100_players')
-          .select('id, username, killer_id, survivor_id, added_at')
-          .order('added_at', { ascending: false })
+        // Fetch from p100_submissions table instead of p100_players
+        const { data: submissions, error } = await supabase
+          .from('p100_submissions')
+          .select('id, username, killer_id, survivor_id, submitted_at')
+          .eq('status', 'approved') // Only show approved submissions
+          .order('submitted_at', { ascending: false })
           .limit(7);
 
         if (error) {
@@ -44,13 +45,13 @@ export default function RecentP100s() {
           return;
         }
 
-        if (!players || players.length === 0) {
+        if (!submissions || submissions.length === 0) {
           setIsLoading(false);
           return;
         }
 
-        const killerIds = Array.from(new Set(players.map(p => p.killer_id).filter(Boolean)));
-        const survivorIds = Array.from(new Set(players.map(p => p.survivor_id).filter(Boolean)));
+        const killerIds = Array.from(new Set(submissions.map(p => p.killer_id).filter(Boolean)));
+        const survivorIds = Array.from(new Set(submissions.map(p => p.survivor_id).filter(Boolean)));
 
         const [killersResponse, survivorsResponse] = await Promise.all([
           killerIds.length > 0 ? supabase.from('killers').select('id, name, image_url').in('id', killerIds) : Promise.resolve({ data: [], error: null }),
@@ -60,21 +61,21 @@ export default function RecentP100s() {
         if (killersResponse.error) console.error('Error fetching killers:', killersResponse.error);
         if (survivorsResponse.error) console.error('Error fetching survivors:', survivorsResponse.error);
 
-        const enrichedPlayers = players
-          .map((player): RecentP100 => {
+        const enrichedSubmissions = submissions
+          .map((submission): RecentP100 => {
             let character: RecentP100['character'] = undefined;
-            if (player.killer_id) {
-              const killer = killersResponse.data?.find(k => k.id === player.killer_id);
+            if (submission.killer_id) {
+              const killer = killersResponse.data?.find(k => k.id === submission.killer_id);
               if (killer) character = { ...killer, type: 'killer' };
-            } else if (player.survivor_id) {
-              const survivor = survivorsResponse.data?.find(s => s.id === player.survivor_id);
+            } else if (submission.survivor_id) {
+              const survivor = survivorsResponse.data?.find(s => s.id === submission.survivor_id);
               if (survivor) character = { ...survivor, type: 'survivor' };
             }
-            return { id: player.id, username: player.username, submitted_at: player.added_at, character };
+            return { id: submission.id, username: submission.username, submitted_at: submission.submitted_at, character };
           })
-          .filter((player): player is EnrichedP100 => !!player.character);
+          .filter((submission): submission is EnrichedP100 => !!submission.character);
 
-        setRecentP100s(enrichedPlayers);
+        setRecentP100s(enrichedSubmissions);
       } catch (error) {
         console.error('Error in fetchRecentP100s:', error);
       } finally {

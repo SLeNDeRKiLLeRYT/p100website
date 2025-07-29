@@ -327,8 +327,8 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
                           .replace(/>/g, '>')
                           .replace(/&/g, '&');
                         
-                        const isLongName = decodedUsername.replace(/\s/g, '').length > 13;
-                        const baseNameClasses = `font-mono text-sm text-gray-200 truncate ${isLongName ? "group-hover:absolute group-hover:z-10 group-hover:top-1/2 group-hover:left-1/2 group-hover:-translate-y-1/2 group-hover:-translate-x-1/2 group-hover:w-auto group-hover:whitespace-nowrap group-hover:overflow-visible group-hover:bg-black group-hover:p-2 group-hover:rounded-md group-hover:ring-1 group-hover:ring-red-500 group-hover:scale-110 transition-transform duration-200 ease-in-out" : ""}`;
+                        const isLongName = decodedUsername.length > 14;
+                        const baseNameClasses = `font-mono text-sm text-gray-200`;
                         
                         // Add legacy glow effect
                         const nameClasses = player.legacy 
@@ -345,9 +345,18 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
                             title={`View P100 profile for ${decodedUsername}`}
                           >
                             <div className="flex flex-col items-center justify-center w-full h-full min-h-[36px] space-y-2">
-                              <span className={nameClasses}>
-                                {decodedUsername}
-                              </span>
+                              <div className="relative">
+                                <span className={`${nameClasses} block truncate max-w-full leading-tight`}>
+                                  {isLongName ? `${decodedUsername.substring(0, 14)}...` : decodedUsername}
+                                </span>
+                                {isLongName && (
+                                  <div className="absolute invisible group-hover:visible z-20 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-3 py-2 bg-black border border-red-500 rounded-md text-white text-sm font-mono shadow-2xl pointer-events-none transition-all duration-300 ease-out group-hover:scale-110 group-hover:animate-in group-hover:fade-in-0 group-hover:zoom-in-95">
+                                    <div className="whitespace-nowrap max-w-xs overflow-hidden text-ellipsis">
+                                      {decodedUsername}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                               {(player.p200 || player.legacy) && (
                                 <div className="flex items-center gap-1">
                                   {player.p200 && (
