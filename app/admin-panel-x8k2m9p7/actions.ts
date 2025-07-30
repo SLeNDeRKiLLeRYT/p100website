@@ -32,7 +32,12 @@ export async function updateSubmissionStatusAction(
 ) {
   try {
     const supabase = createAdminClient();
-    await supabase.from('p100_submissions').update({ status, rejection_reason: status === 'rejected' ? rejectionReason : null }).eq('id', submissionId).throwOnError();
+    await supabase.from('p100_submissions').update({ 
+      status, 
+      rejection_reason: status === 'rejected' ? rejectionReason : null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: 'admin'
+    }).eq('id', submissionId).throwOnError();
 
     if (status === 'approved') {
       const characterColumn = submission.killer_id ? 'killer_id' : 'survivor_id';

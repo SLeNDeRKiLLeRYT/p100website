@@ -12,6 +12,7 @@ interface RecentP100 {
   killer_id?: string;
   survivor_id?: string;
   submitted_at: string;
+  reviewed_at: string;
   character?: {
     id: string;
     name: string;
@@ -34,10 +35,11 @@ export default function RecentP100s() {
         // Fetch from p100_submissions table instead of p100_players
         const { data: submissions, error } = await supabase
           .from('p100_submissions')
-          .select('id, username, killer_id, survivor_id, submitted_at')
+          .select('id, username, killer_id, survivor_id, submitted_at, reviewed_at')
           .eq('status', 'approved') // Only show approved submissions
-          .order('submitted_at', { ascending: false })
-          .limit(7);
+          .not('reviewed_at', 'is', null) // Only include submissions with a review date
+          .order('reviewed_at', { ascending: false })
+          .limit(5); // Show only the 5 most recently reviewed submissions
 
         if (error) {
           console.error('Error fetching recent P100s:', error);
@@ -46,9 +48,13 @@ export default function RecentP100s() {
         }
 
         if (!submissions || submissions.length === 0) {
+          console.log('No approved submissions found');
           setIsLoading(false);
           return;
         }
+
+        console.log('Found approved submissions:', submissions.length);
+        console.log('Submission dates:', submissions.map(s => ({ username: s.username, submitted_at: s.submitted_at })));
 
         const killerIds = Array.from(new Set(submissions.map(p => p.killer_id).filter(Boolean)));
         const survivorIds = Array.from(new Set(submissions.map(p => p.survivor_id).filter(Boolean)));
@@ -71,7 +77,7 @@ export default function RecentP100s() {
               const survivor = survivorsResponse.data?.find(s => s.id === submission.survivor_id);
               if (survivor) character = { ...survivor, type: 'survivor' };
             }
-            return { id: submission.id, username: submission.username, submitted_at: submission.submitted_at, character };
+            return { id: submission.id, username: submission.username, submitted_at: submission.submitted_at, reviewed_at: submission.reviewed_at, character };
           })
           .filter((submission): submission is EnrichedP100 => !!submission.character);
 
@@ -183,10 +189,10 @@ export default function RecentP100s() {
                       {p100.username}
                     </p>
                     <p className="text-xs md:text-sm text-gray-300">
-                      achieved P100 with <span className="text-red-400 font-semibold">{p100.character.name}</span>
+                      achieved P100 <span className="text-red-400 font-semibold">{p100.character.name}</span>
                     </p>
                     <p className="text-xs text-gray-500">
-                      {new Date(p100.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      On {new Date(p100.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
                   </div>
                 </div>
