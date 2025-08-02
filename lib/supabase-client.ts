@@ -87,7 +87,7 @@ export const validateInput = {
     return typeof id === 'string' && 
            id.length >= 1 && 
            id.length <= 50 && 
-           /^[a-zA-Z0-9_]+$/.test(id);
+           /^[a-zA-Z0-9_\-]+$/.test(id);
   },
   
   url: (url: string): boolean => {
