@@ -50,7 +50,8 @@ export async function updateSubmissionStatusAction(
           username: submission.username, 
           [characterColumn]: characterId, 
           p200: false,
-          legacy: false
+          legacy: false,
+          favorite: false
         }).throwOnError();
       }
     }

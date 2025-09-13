@@ -243,3 +243,72 @@ body {
 .legacy-glow-strong {
   color: rgb(254, 215, 170); /* orange-100 */
 }
+
+/* Favorite player pink glow effects with hearts */
+.favorite-glow {
+  color: rgb(244, 114, 182); /* pink-400 */
+  text-shadow: 0 0 10px rgb(244, 114, 182, 0.5);
+}
+
+.favorite-glow-strong {
+  color: rgb(244, 114, 182); /* pink-400 */
+  text-shadow: 0 0 15px rgb(244, 114, 182, 0.7);
+}
+
+.favorite-heart-border {
+  border: 2px solid rgb(244, 114, 182);
+  background: linear-gradient(135deg, rgba(244, 114, 182, 0.1), rgba(236, 72, 153, 0.1));
+  box-shadow: 0 0 20px rgba(244, 114, 182, 0.3);
+  position: relative;
+}
+
+/* Position hearts on all 4 corners */
+.favorite-heart-corners {
+  position: absolute;
+  inset: -12px;
+  pointer-events: none;
+  z-index: 11;
+}
+
+.favorite-heart-corners .heart {
+  position: absolute;
+  color: rgb(244, 114, 182);
+  font-size: 22px;
+  font-weight: bold;
+  text-shadow: 0 0 12px rgba(244, 114, 182, 0.8);
+  animation: heartbeat 2s infinite;
+  line-height: 1;
+  user-select: none;
+}
+
+.favorite-heart-corners .heart:nth-child(1) { 
+  top: 0; 
+  left: 0; 
+  --rotation: -45deg; /* Top-left pointing up-left */
+}
+.favorite-heart-corners .heart:nth-child(2) { 
+  top: 0; 
+  right: 0; 
+  --rotation: 45deg; /* Top-right pointing up-right */
+}
+.favorite-heart-corners .heart:nth-child(3) { 
+  bottom: 0; 
+  left: 0; 
+  --rotation: -135deg; /* Bottom-left pointing down-left */
+}
+.favorite-heart-corners .heart:nth-child(4) { 
+  bottom: 0; 
+  right: 0; 
+  --rotation: 135deg; /* Bottom-right pointing down-right */
+}
+
+@keyframes heartbeat {
+  0%, 100% { 
+    transform: rotate(var(--rotation, 0deg)) scale(1);
+    opacity: 0.8;
+  }
+  50% { 
+    transform: rotate(var(--rotation, 0deg)) scale(1.4);
+    opacity: 1;
+  }
+}

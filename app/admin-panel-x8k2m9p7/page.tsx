@@ -656,7 +656,8 @@ export default function AdminPage() {
             username: sanitizedUsername, 
             [characterColumn]: characterId, 
             p200: false,
-            legacy: false
+            legacy: false,
+            favorite: false
           }).throwOnError();
         }
       }
@@ -1919,7 +1920,7 @@ export default function AdminPage() {
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold text-white">P100 Players Database</h2>
-                    <Button onClick={() => setEditingPlayer({ username: '', killer_id: null, survivor_id: null, p200: false })} className="bg-green-600 hover:bg-green-700">Add New Player</Button>
+                    <Button onClick={() => setEditingPlayer({ username: '', killer_id: null, survivor_id: null, p200: false, legacy: false, favorite: false })} className="bg-green-600 hover:bg-green-700">Add New Player</Button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <Input 
@@ -1970,7 +1971,7 @@ export default function AdminPage() {
                         </div>
                     )}
                     <Table>
-                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Favorite</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {sortedPlayers.length > 0 ? sortedPlayers.map((player) => (<TableRow key={player.id} className="border-red-600/30">
                             <TableCell className="text-white font-medium">{player.username}</TableCell>
@@ -1978,10 +1979,11 @@ export default function AdminPage() {
                             <TableCell className="text-gray-400">{player.killer_id ? 'Killer' : 'Survivor'}</TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.p200 ? 'bg-purple-600' : 'bg-gray-600'}`}>{player.p200 ? 'P200' : 'P100'}</span></TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.legacy ? 'bg-orange-600' : 'bg-gray-600'}`}>{player.legacy ? 'Legacy' : 'Standard'}</span></TableCell>
+                            <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.favorite ? 'bg-pink-600' : 'bg-gray-600'}`}>{player.favorite ? 'Favorite' : 'Standard'}</span></TableCell>
                             <TableCell className="text-gray-400">{new Date(player.added_at).toLocaleDateString()}</TableCell>
                             <TableCell><div className="flex gap-2"><Button onClick={() => setEditingPlayer(player)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deletePlayer(player.id)} disabled={deletingItem === player.id} size="sm" variant="destructive">{deletingItem === player.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                         </TableRow>)) : (
-                            <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={8} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
                         )}
                       </TableBody>
                     </Table>
@@ -2143,6 +2145,7 @@ export default function AdminPage() {
                         </div>
                         <div className="flex items-center space-x-2"><input type="checkbox" id="p200" checked={!!editingPlayer.p200} onChange={(e) => setEditingPlayer({...editingPlayer, p200: e.target.checked})} /><Label htmlFor="p200" className="text-white">P200 Status</Label></div>
                         <div className="flex items-center space-x-2"><input type="checkbox" id="legacy" checked={!!editingPlayer.legacy} onChange={(e) => setEditingPlayer({...editingPlayer, legacy: e.target.checked})} /><Label htmlFor="legacy" className="text-white">Legacy Status</Label></div>
+                        <div className="flex items-center space-x-2"><input type="checkbox" id="favorite" checked={!!editingPlayer.favorite} onChange={(e) => setEditingPlayer({...editingPlayer, favorite: e.target.checked})} /><Label htmlFor="favorite" className="text-white">Favorite Status</Label></div>
                         <div className="flex gap-2"><Button onClick={() => savePlayer(editingPlayer)} className="bg-green-600 hover:bg-green-700">Save</Button><Button onClick={() => setEditingPlayer(null)} variant="outline" className="border-red-600 text-white hover:bg-red-900">Cancel</Button></div>
                     </div>
                 </DialogContent>

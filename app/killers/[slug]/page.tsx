@@ -15,6 +15,7 @@ interface P100Player {
   added_at: string;
   p200: boolean | null;
   legacy: boolean | null; // Add legacy field
+  favorite: boolean | null; // Add favorite field
 }
 
 interface KillerData {
@@ -298,19 +299,33 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                         const baseNameClasses = `font-mono text-sm text-gray-200`;
                         
                         // Add legacy glow effect
-                        const nameClasses = player.legacy 
-                          ? `${baseNameClasses} text-orange-200 drop-shadow-[0_0_4px_rgba(251,146,60,0.8)] animate-pulse`
-                          : baseNameClasses;
+                        let nameClasses = baseNameClasses;
+                        let borderClasses = "group relative block bg-black/40 border border-red-600/20 rounded-md p-3 hover:border-red-500/40 hover:bg-black/60 transition-all duration-200";
+                        
+                        if (player.favorite) {
+                          nameClasses = `${baseNameClasses} favorite-glow animate-pulse`;
+                          borderClasses = "group relative block bg-black/40 favorite-heart-border rounded-md p-3 hover:border-pink-400/60 hover:bg-pink-900/20 transition-all duration-200";
+                        } else if (player.legacy) {
+                          nameClasses = `${baseNameClasses} text-orange-200 drop-shadow-[0_0_4px_rgba(251,146,60,0.8)] animate-pulse`;
+                        }
 
                         return (
                             <Link
                               key={player.id}
                               href={`/profile/${encodeURIComponent(decodedUsername)}`}
-                              className="group relative block bg-black/40 border border-red-600/20 rounded-md p-3 hover:border-red-500/40 hover:bg-black/60 transition-all duration-200"
+                              className={borderClasses}
                               role="listitem"
                               tabIndex={0}
                               title={`View P100 profile for ${decodedUsername}`}
                             >
+                              {player.favorite && (
+                                <div className="favorite-heart-corners">
+                                  <span className="heart">♥</span>
+                                  <span className="heart">♥</span>
+                                  <span className="heart">♥</span>
+                                  <span className="heart">♥</span>
+                                </div>
+                              )}
                               <div className="flex flex-col items-center justify-center w-full h-full min-h-[36px] space-y-2">
                               <div className="relative">
                                 <span className={`${nameClasses} block truncate max-w-full leading-tight`}>
@@ -324,7 +339,7 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                                   </div>
                                 )}
                               </div>
-                              {(player.p200 || player.legacy) && (
+                              {(player.p200 || player.legacy || player.favorite) && (
                                 <div className="flex items-center gap-1">
                                   {player.p200 && (
                                     <div className="w-5 h-5" title="P200 means a player reached P100 on the same character twice. This is a rare achievement and the players on this list deserve full credit for the time and dedication it takes to reach it.">
@@ -334,6 +349,13 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                                   {player.legacy && (
                                     <div className="w-5 h-5" title="Legacy player: One of the original P100 achievers who reached this milestone when it was extremely rare and difficult.">
                                       <Image src="/legacy.png" alt="Legacy Achievement" width={20} height={20} className="object-contain"/>
+                                    </div>
+                                  )}
+                                  {player.favorite && (
+                                    <div className="w-5 h-5 text-pink-400" title="Favorite player: A beloved member of the community who has made special contributions and is cherished by fellow players.">
+                                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                      </svg>
                                     </div>
                                   )}
                                 </div>

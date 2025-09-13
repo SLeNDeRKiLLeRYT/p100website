@@ -15,6 +15,7 @@ interface PlayerP100s {
     imageUrl: string;
     p200?: boolean;
     legacy?: boolean;
+    favorite?: boolean;
   }>;
   survivors: Array<{
     id: string;
@@ -22,6 +23,7 @@ interface PlayerP100s {
     imageUrl: string;
     p200?: boolean;
     legacy?: boolean;
+    favorite?: boolean;
   }>;
 }
 
@@ -30,7 +32,7 @@ async function getPlayerData(username: string): Promise<PlayerP100s | null> {
   
   const { data: players, error } = await supabase
     .from('p100_players')
-    .select('killer_id, survivor_id, p200, legacy') // Add legacy field
+    .select('killer_id, survivor_id, p200, legacy, favorite') // Add favorite field
     .eq('username', username);
 
   if (error) {
@@ -66,7 +68,8 @@ async function getPlayerData(username: string): Promise<PlayerP100s | null> {
     imageUrl: k.image_url,
     // Add status info from player data
     p200: players?.find(p => p.killer_id === k.id)?.p200 || false,
-    legacy: players?.find(p => p.killer_id === k.id)?.legacy || false
+    legacy: players?.find(p => p.killer_id === k.id)?.legacy || false,
+    favorite: players?.find(p => p.killer_id === k.id)?.favorite || false
   })).sort((a,b) => a.name.localeCompare(b.name));
   
   const survivors = (survivorsResponse.data || []).map(s => ({ 
@@ -75,7 +78,8 @@ async function getPlayerData(username: string): Promise<PlayerP100s | null> {
     imageUrl: s.image_url,
     // Add status info from player data
     p200: players?.find(p => p.survivor_id === s.id)?.p200 || false,
-    legacy: players?.find(p => p.survivor_id === s.id)?.legacy || false
+    legacy: players?.find(p => p.survivor_id === s.id)?.legacy || false,
+    favorite: players?.find(p => p.survivor_id === s.id)?.favorite || false
   })).sort((a,b) => a.name.localeCompare(b.name));
 
   return { username, killers, survivors };
@@ -112,7 +116,15 @@ export default async function PlayerProfilePage({ params }: { params: { username
                 </h3>
                 <div className="character-grid">
                   {playerData.killers.map((killer, index) => (
-                    <Link key={killer.id} href={`/killers/${killer.id}`} className="character-card group">
+                    <Link key={killer.id} href={`/killers/${killer.id}`} className={`character-card group ${killer.favorite ? 'favorite-heart-border' : ''}`}>
+                      {killer.favorite && (
+                        <div className="favorite-heart-corners">
+                          <span className="heart">♥</span>
+                          <span className="heart">♥</span>
+                          <span className="heart">♥</span>
+                          <span className="heart">♥</span>
+                        </div>
+                      )}
                       <div className="relative w-full h-full">
                         <Image
                           src={killer.imageUrl}
@@ -134,7 +146,13 @@ export default async function PlayerProfilePage({ params }: { params: { username
                           </div>
                         )}
                         <div className="absolute bottom-0 left-0 right-0 p-4 text-center">
-                          <h4 className={`font-bold text-lg ${killer.legacy ? 'text-orange-200 drop-shadow-[0_0_6px_rgba(251,146,60,0.8)]' : 'text-white'}`}>
+                          <h4 className={`font-bold text-lg ${
+                            killer.favorite 
+                              ? 'text-pink-400 favorite-glow' 
+                              : killer.legacy 
+                                ? 'text-orange-200 drop-shadow-[0_0_6px_rgba(251,146,60,0.8)]' 
+                                : 'text-white'
+                          }`}>
                             {killer.name}
                           </h4>
                         </div>
@@ -153,7 +171,15 @@ export default async function PlayerProfilePage({ params }: { params: { username
                 </h3>
                 <div className="character-grid">
                   {playerData.survivors.map((survivor, index) => (
-                    <Link key={survivor.id} href={`/survivors/${survivor.id}`} className="character-card group">
+                    <Link key={survivor.id} href={`/survivors/${survivor.id}`} className={`character-card group ${survivor.favorite ? 'favorite-heart-border' : ''}`}>
+                      {survivor.favorite && (
+                        <div className="favorite-heart-corners">
+                          <span className="heart">♥</span>
+                          <span className="heart">♥</span>
+                          <span className="heart">♥</span>
+                          <span className="heart">♥</span>
+                        </div>
+                      )}
                       <div className="relative w-full h-full">
                         <Image
                           src={survivor.imageUrl}
@@ -175,7 +201,13 @@ export default async function PlayerProfilePage({ params }: { params: { username
                           </div>
                         )}
                         <div className="absolute bottom-0 left-0 right-0 p-4 text-center">
-                          <h4 className={`font-bold text-lg ${survivor.legacy ? 'text-orange-200 drop-shadow-[0_0_6px_rgba(251,146,60,0.8)]' : 'text-white'}`}>
+                          <h4 className={`font-bold text-lg ${
+                            survivor.favorite 
+                              ? 'text-pink-400 favorite-glow' 
+                              : survivor.legacy 
+                                ? 'text-orange-200 drop-shadow-[0_0_6px_rgba(251,146,60,0.8)]' 
+                                : 'text-white'
+                          }`}>
                             {survivor.name}
                           </h4>
                         </div>
