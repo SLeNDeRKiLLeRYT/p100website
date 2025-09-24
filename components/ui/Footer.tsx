@@ -37,7 +37,7 @@ export default function Footer() {
           <p className="text-base text-gray-400 mt-2 font-mono font-bold">Psst! I also have a Twitch channel! Every follow is much appreciated, I mostly stream Dead By Daylight!</p>
 
           <Link
-            href="https://www.twitch.tv/slender_killer_yt"
+            href="https://www.twitch.tv/slender_kill3r"
             target="_blank"
             className="mt-2 inline-block transition-transform duration-300 ease-in-out hover:scale-125"
           >
