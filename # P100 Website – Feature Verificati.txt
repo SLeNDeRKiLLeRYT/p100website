@@ -1,0 +1,109 @@
+# P100 Website – Feature Verification & Test Guide
+
+This document explains how each requested item was implemented and how to test it.
+
+1) Tool to choose who goes to the top of a list (pin user)
+- Where
+  - Admin server action import: [app/admin-panel-x8k2m9p7/actions.ts](app/admin-panel-x8k2m9p7/actions.ts) (imports `updatePlayerPriority` from the players service).
+  - Admin UI: P100 Players table in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx).
+- Test
+  - Open Admin → Players.
+  - Pin a user and confirm they appear at the top immediately.
+  - Refresh; ordering persists.
+  - Unpin and confirm ordering returns to normal.
+
+2) Highlight like P200/Legacy but pink with hearts
+- Where
+  - Rendered in the list UI (badge/styling applied alongside P200/Legacy styles) in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx).
+- Test
+  - Toggle the new highlight for a user.
+  - Verify the username box shows the pink-with-hearts styling in the public list.
+  - Refresh; style persists.
+
+3) Public page to check submission status (denied/pending/accepted)
+- Where
+  - Linked from the submit form: “Check your submission status” link in [app/submission/page.tsx](app/submission/page.tsx).
+- Test
+  - Open the status page from the link.
+  - Enter a username known to have recent submissions and verify statuses render correctly.
+  - Try a non-existent username; page should handle gracefully.
+
+4) Auto-deny doubles/spam if a submission for that character already exists (pending/approved)
+- Where
+  - Client guard in [app/submission/page.tsx](app/submission/page.tsx) — duplicate check queries `p100_submissions` with `status ∈ ('pending','approved')`, `legacy = false`, the same character column, and the same username. If found, it logs the blocking record, inserts a rejected audit row, and stops submission.
+- Test
+  - Submit P100 for a character as user X.
+  - While the first is pending (or after approval), try to submit again for the same character as user X.
+  - Observe “Denied” message and console group “Denied duplicate attempt” showing the blocking DB record.
+  - Try as user Y for the same character; it should be allowed.
+
+5) Increase screenshot size limit to 20 MB
+- Where
+  - File size check in [app/submission/page.tsx](app/submission/page.tsx): `if (formData.screenshot.size > 20 * 1024 * 1024)`.
+- Test
+  - Upload a ~21 MB image; form should reject with a size error.
+  - Upload a ~19 MB image; form should accept and proceed to submit.
+
+6) Username suggestion should encourage using the same username (including when pending)
+- Where
+  - Type-ahead suggestions in [app/submission/page.tsx](app/submission/page.tsx) pulling from `p100_players` and showing prior names as you type.
+  - Duplicate-guard (see #4) ensures a user sticks to the same username when attempting re-submissions for the same character.
+- Test
+  - Start typing a known username; suggestion list appears with P100 count.
+  - Pick a suggestion and complete a submission.
+  - Attempt a duplicate for the same character with that username; observe the denial as in #4.
+
+7) Credits page updated and allow submitting with special characters
+- Where
+  - Credits content: [app/credits/page.tsx](app/credits/page.tsx).
+  - Username validation uses [`sanitizeInput`, `validateInput`] in [app/submission/page.tsx](app/submission/page.tsx).
+- Test
+  - Submit using a username containing special characters (e.g., “Zoë ☆”).
+  - Verify submission is accepted client-side and recorded server-side.
+  - Confirm the credits page loads and renders as expected.
+
+8) Background credit field per character (editable)
+- Where
+  - Admin character editor fields in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx).
+- Test
+  - Open Admin → Characters → Edit.
+  - Enter a name and link for the background credit, save.
+  - Visit the public character page and confirm the credit shows under the header.
+
+9) Search pending submissions and edit the name before acceptance
+- Where
+  - Admin UI edit controls: “pencil” button shown for pending in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx) near the submissions table.
+- Test
+  - Open Admin → Submissions → Pending.
+  - Click the pencil next to a submission’s username, change it, save.
+  - Approve the submission; confirm the approved player uses the edited name.
+
+10) “Last update” equals the last acceptance time (not dashboard open time)
+- Where
+  - Admin state and update flow in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx) — variables like `lastApprovedGlobal`/`Killer`/`Survivor` are updated on approval.
+- Test
+  - Approve a submission.
+  - Check the “last update” label updates to the approval timestamp.
+  - Refresh; ensure the timestamp persists.
+
+11) Easier artwork deletion and edit which artist is linked (revamped view)
+- Where
+  - Artworks tab in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx): unified library view, assign, and delete controls.
+- Test
+  - Open Admin → Artworks.
+  - Use the delete button on an entry; the row disappears and storage/DB reflect removal.
+  - Change the linked artist on an artwork and confirm the change is reflected in lists/credits.
+
+12) Fix: Some artists not displayed if they have special characters in their name
+- Where
+  - Upload filename generation and Unicode-safe sanitization in [app/admin-panel-x8k2m9p7/page.tsx](app/admin-panel-x8k2m9p7/page.tsx) around the artwork upload flow (uses URL-encoded `-by-<artistName>` to preserve special characters).
+- Test
+  - Upload a new artwork and assign an artist with special characters (e.g., “Beyoncé”, “Zoë”, “あなご”).
+  - Add it to a character (gallery/header).
+  - Visit the character page and verify the correct artist name renders beneath the image and links properly.
+  - Legacy files uploaded before this change may still lack names; re-upload or run a repair if needed.
+
+Notes
+- Submission form code paths mentioned: [app/submission/page.tsx](app/submission/page.tsx).
+- Admin actions referenced: [app/admin-panel-x8k2m9p7/actions.ts](app/admin-panel-x8k2m9p7/actions.ts).
+- If any item doesn’t behave as described, capture console logs and the failing record IDs to reproduce quickly.

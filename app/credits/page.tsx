@@ -33,45 +33,49 @@ export default function CreditsPage() {
             <p className="mt-2 text-sm italic text-gray-400">Art by Emilu</p>
           </div>
           
-          <div className="mb-12 space-y-6 font-mono text-center">
-            <p className="text-lg">Hello!</p>
-            
-            <p className="text-sm">
-              Thank you for visiting the credits section. I am Steve Slender, the one who came up with the idea for this website and built it. I'm a variety streamer who loves gathering data and playing DBD. Of course, I was not alone in this. Many people—players, artists, and friends—helped me along the way.
+          <div className="mb-12 font-mono text-sm leading-relaxed space-y-4">
+            <p>Hello !</p>
+            <p>
+              Thank you for coming to the credits section. I, the one who came up the idea of this website, and made it, am steve Slender. A variety streamer, that loves to gather data, and DbD.
             </p>
-            
-            <p className="text-sm">
-              Even though I wrote down the names, organized the DMs I received, and checked the screenshots, everything you see and are browsing right now would not exist without their help. I especially want to thank Pix, Convalaja, and Zet_Zen, all amazing people who contributed to this project.
+            <p>
+              I was of course not alone on this. Lot of people, players, artists, and friends helped me. Even if I was the one to write down the names, order the dms i got, and check the screenshots. Everything you see and what you are browsing right now, would not be there without them. So I really want to thank Pix, Convaliaa, and Zet_Zen who are all amazing people who helped with this project.
             </p>
-            
-            <p className="text-sm">
-              I mentioned artists, and you probably saw their work above. Every artwork has the author's name below it, and clicking the artwork will redirect you to the artist's main social media account. If it doesn't redirect you or lacks credits, I made it. All the artists are amazing people—please show them support and love! This website would never be this beautiful without them!
+            <p>
+              I talked about artists, and you probably saw them around (in fact, right above this). Every artwork got the author's name below it, along with the artwork itself redirecting you toward the main social media account of the artist. If it doesn't redirect you, or lack credits, I made it. They are all amazing people, please show them support and love ! This website would never be this beautiful without them !
             </p>
-            
-            <p className="text-sm">
-              This website was also heavily inspired by a trend of P100 lists that happened on Twitter a few months ago. People were creating lists by character, and I wanted to turn it into something bigger. Somehow, this website came to life in the end! Seeing that the DBD community loved those lists as much as I do, it seemed like a great idea.
+            <p>
+              This website was also HEAVILY inspired by a trend of P100 lists that happened on Twitter, a few months ago. People were sharing their love for their favorite character by making lists of people who got p100 on them. I loved the idea, but then I noticed : Some characters were never even mentioned. Or when they were, the ones who did would give up saying there was not enough people to make a list. Remember when i said I love Dead by Daylight?
             </p>
-            
-            <p className="text-sm">
-              If you are a content creator, feel free to show the website during a stream or in a video! The goal is to get as many P100s as possible.
+            <p>
+              I love every and each of its characters. seeing this made me a bit sad that some of them would simply not get a list because of the lack of communication and means to get players on that list. So I did, what you are reading, this website. I was also heavily helped by the ones who made the original p100 lists, and this, again, would not be possible without them.
             </p>
-            
-            <p className="text-sm font-bold">
-              SPECIAL THANKS TO PIX, ZEBROWSKI, CONVALAJA, and ZET_ZEN for helping with the website!
+            <p>I want to thanks :</p>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>Witheringspark, for the Cheryl list,</li>
+              <li>VeriHiHi, for the Leon list,</li>
+              <li>YoichiBear, for the Yoichi list,</li>
+              <li>Riversknife, for the Trickster list, along with the amazing screenshots,</li>
+              <li>Ghost Anonymous, for the Chucky list,</li>
+              <li>D4wny3l, for the Nea list,</li>
+              <li>Horceror, for the Nemesis list,</li>
+              <li>Resoleon, for the Knight list,</li>
+              <li>YoCyanide, for the Yun-Jin list,</li>
+              <li>Momtanna, for the Feng Min list,</li>
+              <li>Diabetic, for the Nancy list,</li>
+              <li>Raccoon kid, for the Singularity list,</li>
+              <li>Brandyn, for the Unknown list (not that i forgot what list they helped with. It's literally the Unknown.)</li>
+              <li>allthatjasss, for the Zarina list,</li>
+              <li>Esskay, for the GhostFace list,</li>
+              <li>Needtorename, for the Leatherface list,</li>
+              <li>AlexandrFall, for the DeathSlinger list,</li>
+              <li>GrimCyanide, for the Alan Wake list,</li>
+              <li>and Aries, for the Jill list.</li>
+            </ul>
+            <p>
+              Special thanks to HPHoenix, for helping me with the Clown and Doctor lists, as well as sending me every P100 they could spot. Huge !
             </p>
-            <p className="text-sm">
-              Special thanks to{" "}
-              <a
-                href="https://x.com/princegrid"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-white-400 underline hover:text-blue-300"
-              >
-                princegrid
-              </a>{" "}
-              for developing the website!
-            </p>
-
+            <p>Thank you so much for reading.<br/>Much love,<br/>Slender</p>
           </div>
         </div>
       </main>

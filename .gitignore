@@ -40,3 +40,6 @@ next-env.d.ts
 
 # ignore all .md files 
 *.md
+migrations/20251003_backfill_artworks_and_auto_assign_artists.sql
+migrations/add_background_credit_fields.sql
+migrations/add_player_priority.sql

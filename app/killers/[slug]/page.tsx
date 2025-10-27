@@ -27,6 +27,8 @@ interface KillerData {
   legacy_header_urls?: (string | null)[] | null;
   players: P100Player[];
   background_image_url?: string;
+  background_credit_name?: string | null;
+  background_credit_url?: string | null;
 }
 
 // Helper function to check if legacy header should be displayed
@@ -68,7 +70,7 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
   const supabase = createServerClient();
   const { data: killer, error: killerError } = await supabase
     .from('killers')
-    .select('id, name, image_url, created_at, updated_at, order, background_image_url, header_url, artist_urls, legacy_header_urls')
+    .select('id, name, image_url, created_at, updated_at, order, background_image_url, header_url, artist_urls, legacy_header_urls, background_credit_name, background_credit_url')
     .eq('id', slug)
     .single();
   
@@ -86,6 +88,7 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
     .from('p100_players')
     .select('*')
     .eq('killer_id', killer.id)
+    .order('priority', { ascending: false })
     .order('added_at', { ascending: true });
   if (playersByIdError) {
     console.error('Error fetching players by ID:', playersByIdError);
@@ -97,6 +100,7 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
       .from('p100_players')
       .select('*')
       .eq('killer_id', killerNameLower)
+      .order('priority', { ascending: false })
       .order('added_at', { ascending: true });
     
     if (playersByNameError) {
@@ -159,6 +163,15 @@ export default async function KillerPage({ params }: { params: { slug: string } 
           
           {/* Centered header content */}
           <div className="max-w-4xl mx-auto relative">
+            {killerData.background_credit_name && (
+              <div className="mb-4 text-center text-xs text-gray-400 italic">
+                Background art credit: {killerData.background_credit_url ? (
+                  <a href={killerData.background_credit_url} target="_blank" rel="noopener noreferrer" className="underline hover:text-red-300">{killerData.background_credit_name}</a>
+                ) : (
+                  killerData.background_credit_name
+                )}
+              </div>
+            )}
             {shouldDisplayLegacyHeader(killerData.legacy_header_urls) ? (
               <div className="mb-12">
                 <div className="hidden md:flex items-center justify-center gap-8 mb-8">

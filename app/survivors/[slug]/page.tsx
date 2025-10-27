@@ -31,6 +31,8 @@ interface SurvivorData {
   legacy_header_urls?: (string | null)[] | null;
   players: P100Player[];
   background_image_url?: string;
+  background_credit_name?: string | null;
+  background_credit_url?: string | null;
 }
 
 // Helper function to check if legacy header should be displayed
@@ -93,6 +95,7 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
     .from('p100_players')
     .select('*')
     .eq('survivor_id', survivor.id)
+    .order('priority', { ascending: false })
     .order('added_at', { ascending: true });
 
   if (playersByIdError) {
@@ -105,6 +108,7 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
       .from('p100_players')
       .select('*')
       .eq('survivor_id', survivorNameLower)
+      .order('priority', { ascending: false })
       .order('added_at', { ascending: true });
     
     if (playersByNameError) {
@@ -167,7 +171,15 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
         
         <main className="container mx-auto px-4 py-8 pt-16 sm:pt-20">
           <Navigation />
-          
+          {survivorData?.background_credit_name && (
+            <div className="max-w-4xl mx-auto mt-2 mb-4 text-center text-xs text-gray-400 italic">
+              Background art credit: {survivorData.background_credit_url ? (
+                <a href={survivorData.background_credit_url} target="_blank" rel="noopener noreferrer" className="underline hover:text-red-300">{survivorData.background_credit_name}</a>
+              ) : (
+                survivorData.background_credit_name
+              )}
+            </div>
+          )}
           <div className="max-w-4xl mx-auto relative">
             {shouldDisplayLegacyHeader(survivorData.legacy_header_urls) ? (
               <div className="mb-12">

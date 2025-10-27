@@ -1,9 +1,11 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, notFound } from 'next/navigation';
 import supabase, { createAdminClient, sanitizeInput, validateInput } from '@/lib/supabase-client';
+import React from 'react';
+import { fetchArtworks, updateArtworkArtist, deleteArtwork, ArtworkRecord, upsertArtworkAndUsage } from '@/lib/artworks-service';
 // You will need to export updateArtist from your service file
 import { getArtists, createArtist, deleteArtist, updateArtist, Artist, ArtistInsert } from '@/lib/artists-service';
 import Navigation from '@/components/ui/Navigation';
@@ -30,6 +32,8 @@ interface Submission {
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason?: string;
   submitted_at: string;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
   comment?: string;
   legacy?: boolean;
 }
@@ -67,6 +71,7 @@ interface SubmissionStats {
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
 const SUBMISSIONS_PAGE_SIZE = 100;
+const ARTWORKS_PAGE_SIZE = 100;
 
 // Safe sanitization for comments - allows emojis, symbols, but prevents XSS
 const sanitizeComment = (comment: string): string => {
@@ -108,9 +113,15 @@ const formatFileSize = (bytes: number, decimals = 2) => {
 };
 
 const sanitizeFileName = (filename: string): string => {
-  return decodeURIComponent(filename)
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9-_\.]/g, '');
+  // Keep Unicode letters and numbers to support international artist names.
+  // Still remove path separators and unsafe punctuation; collapse spaces to dashes.
+  const decoded = decodeURIComponent(filename);
+  return decoded
+    .replace(/[\\/]/g, '-') // never allow path separators
+    .replace(/\s+/g, '-') // spaces -> dashes for stability
+    // Allow Unicode letters (\p{L}), numbers (\p{N}), dash, underscore and dot
+    // Everything else is stripped for a storage-safe base name
+    .replace(/[^\p{L}\p{N}\-_.]/gu, '');
 };
 
 interface NewCharacterForm {
@@ -167,6 +178,200 @@ export default function AdminPage() {
   // Filter States
   const [filter, setFilter] = useState<'all' | 'killer' | 'survivor'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [submissionSearch, setSubmissionSearch] = useState('');
+  const [editingSubmissionUsername, setEditingSubmissionUsername] = useState<string | null>(null);
+  const [editingSubmissionValue, setEditingSubmissionValue] = useState('');
+  const [lastApprovedGlobal, setLastApprovedGlobal] = useState<string | null>(null);
+  const [lastApprovedKiller, setLastApprovedKiller] = useState<string | null>(null);
+  const [lastApprovedSurvivor, setLastApprovedSurvivor] = useState<string | null>(null);
+  // Artworks state
+  const [artworks, setArtworks] = useState<ArtworkRecord[]>([]);
+  const [artworksLoading, setArtworksLoading] = useState(false);
+  const [artworkSearch, setArtworkSearch] = useState('');
+  const [assigningArtworkId, setAssigningArtworkId] = useState<string | null>(null);
+  const [deletingArtworkId, setDeletingArtworkId] = useState<string | null>(null);
+  const [promotingUrl, setPromotingUrl] = useState<string | null>(null);
+  const [promotingAll, setPromotingAll] = useState(false);
+
+  // ---------------- Artworks grouping helpers & child components ----------------
+  type MinimalCharacter = { id: string; name: string; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; header_url?: string | null; background_image_url?: string | null; image_url?: string | null; };
+
+  type RawEntry = { url: string; characterType: 'killer' | 'survivor'; characterId: string; fieldName: string; characterName: string };
+
+  interface PromotionSectionProps {
+    killers: MinimalCharacter[];
+    survivors: MinimalCharacter[];
+    artworks: ArtworkRecord[];
+    onPromote: (args: { url: string; characterType: 'killer' | 'survivor'; characterId: string; fieldName: string }) => Promise<void>;
+    onPromoteBatch: (entries: RawEntry[]) => Promise<void>;
+    promotingUrl: string | null;
+    promotingAll: boolean;
+  }
+
+  const fieldNames: Array<keyof MinimalCharacter> = ['artist_urls','legacy_header_urls','header_url','background_image_url','image_url'];
+
+  const PromotionSection: React.FC<PromotionSectionProps> = ({ killers, survivors, artworks, onPromote, onPromoteBatch, promotingUrl, promotingAll }) => {
+    // Build a Set of existing normalized artwork URLs for quick skip
+    const normalized = new Set(artworks.map(a => a.artwork_url));
+    type RawEntry = { url: string; characterType: 'killer' | 'survivor'; characterId: string; fieldName: string; characterName: string };
+    const raw: RawEntry[] = [];
+    const processChar = (c: MinimalCharacter, characterType: 'killer' | 'survivor') => {
+      fieldNames.forEach(fn => {
+        const v = c[fn];
+        if (!v) return;
+        if (Array.isArray(v)) {
+          v.forEach(u => { if (u && !normalized.has(u)) raw.push({ url: u, characterType, characterId: c.id, fieldName: fn as string, characterName: c.name }); });
+        } else if (typeof v === 'string') {
+          if (v && !normalized.has(v)) raw.push({ url: v, characterType, characterId: c.id, fieldName: fn as string, characterName: c.name });
+        }
+      });
+    };
+    killers.forEach(k => processChar(k,'killer'));
+    survivors.forEach(s => processChar(s,'survivor'));
+    if (!raw.length) return null;
+    return (
+      <div className="border border-blue-700 rounded p-4 bg-blue-900/10 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h3 className="text-white font-semibold">Unmatched Links</h3>
+            <p className="text-xs text-gray-400">These image links live only on individual characters right now. Normalize to manage credits centrally.</p>
+          </div>
+          <Button
+            size="sm"
+            className="bg-green-700 hover:bg-green-600"
+            disabled={promotingAll}
+            onClick={() => onPromoteBatch(raw)}
+          >
+            {promotingAll ? 'Normalizing…' : `Add All (${raw.length})`}
+          </Button>
+        </div>
+        <div className="max-h-64 overflow-y-auto divide-y divide-red-800/40">
+          {raw.slice(0,300).map(r => (
+            <div key={r.characterType + r.characterId + r.fieldName + r.url} className="py-2 flex flex-col gap-1">
+              <div className="flex flex-wrap gap-2 items-center text-xs">
+                <span className="px-2 py-0.5 bg-red-800/40 rounded border border-red-700">{r.characterType[0].toUpperCase()}:{r.characterId}</span>
+                <span className="text-gray-300 truncate max-w-[320px]" title={r.url}>{r.url}</span>
+                <span className="text-gray-500">{r.fieldName}</span>
+                <Button size="sm" variant="outline" title="Add this character-only link into the central artworks list" className="h-6 px-2 border-green-600 text-green-300" disabled={promotingAll || promotingUrl===r.url} onClick={() => onPromote({ url: r.url, characterType: r.characterType, characterId: r.characterId, fieldName: r.fieldName })}>{promotingUrl===r.url ? 'Adding...' : 'Add to Artworks'}</Button>
+                <Button size="sm" variant="outline" className="h-6 px-2 border-blue-600 text-blue-300" onClick={() => { navigator.clipboard.writeText(r.url); toast({ title: 'Copied'}); }}>Copy</Button>
+              </div>
+            </div>
+          ))}
+          {raw.length > 300 && <div className="text-xs text-gray-500 pt-2">Showing first 300 unmatched links… refine by normalizing or editing characters.</div>}
+        </div>
+      </div>
+    );
+  };
+
+  interface GroupedArtworksProps {
+    artworks: ArtworkRecord[];
+    artists: { id: string; name: string }[];
+    assigningArtworkId: string | null;
+    deletingArtworkId: string | null;
+    promotingUrl: string | null; // reserved for potential inline promotion feedback
+    onAssignArtist: (artworkId: string, artistId: string) => Promise<void>;
+    onDelete: (artworkId: string) => Promise<void>;
+  }
+
+  type GroupKey = string; // e.g. killer|trapper|artist_urls OR __unassigned
+  interface GroupMeta { label: string; characterType?: string; characterId?: string; fieldName?: string; }
+
+  const buildGroups = (records: ArtworkRecord[]): Map<GroupKey, { meta: GroupMeta; items: ArtworkRecord[] }> => {
+    const map = new Map<GroupKey, { meta: GroupMeta; items: ArtworkRecord[] }>();
+    const unassigned: ArtworkRecord[] = [];
+    records.forEach(r => {
+      if (!r.usages || !r.usages.length) { unassigned.push(r); return; }
+      // Group by character only (type + id) merging all fields beneath
+      const byCharacterKeys = new Set<string>();
+      r.usages.forEach(u => {
+        const key = `${u.character_type}|${u.character_id}`;
+        if (!map.has(key)) map.set(key, { meta: { label: `${u.character_type === 'killer' ? 'Killer' : 'Survivor'} • ${u.character_id}`, characterType: u.character_type, characterId: u.character_id }, items: [] });
+        if (!byCharacterKeys.has(key)) { // ensure each artwork appears once per character even if multiple fields
+          map.get(key)!.items.push(r);
+          byCharacterKeys.add(key);
+        }
+      });
+    });
+    if (unassigned.length) map.set('__unassigned', { meta: { label: 'Unassigned (no usages)' }, items: unassigned });
+    return map;
+  };
+
+  const GroupedArtworks: React.FC<GroupedArtworksProps> = ({ artworks, artists, assigningArtworkId, deletingArtworkId, onAssignArtist, onDelete }) => {
+    const groups = React.useMemo(() => buildGroups(artworks), [artworks]);
+    if (!artworks.length) return <div className="text-gray-400 text-sm">No artworks found.</div>;
+    return (
+      <div className="space-y-4">
+        {[...groups.entries()].sort((a,b)=> a[0].localeCompare(b[0])).map(([key, group]) => (
+          <div key={key} className="border border-red-700 rounded">
+            <details open className="group">
+              <summary className="cursor-pointer select-none px-4 py-2 flex justify-between items-center bg-red-900/40 hover:bg-red-900/60">
+                <span className="text-white text-sm font-semibold">{group.meta.label} <span className="text-xs text-gray-400">({group.items.length})</span></span>
+              </summary>
+              <div className="p-3 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-red-600/40">
+                      <TableHead className="text-white w-20">Preview</TableHead>
+                      <TableHead className="text-white min-w-[260px]">URL</TableHead>
+                      <TableHead className="text-white w-48">Artist</TableHead>
+                      <TableHead className="text-white">All Usages</TableHead>
+                      <TableHead className="text-white w-28">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {group.items.map(item => {
+                      const isImg = /\.(png|jpg|jpeg|gif|webp)$/i.test(item.artwork_url);
+                      return (
+                        <TableRow key={item.id} className="border-red-600/10 hover:bg-red-900/20">
+                          <TableCell className="text-white">
+                            {isImg ? <img src={item.artwork_url} alt="art" className="h-14 w-14 object-cover rounded" loading="lazy"/> : <span className="text-xs">N/A</span>}
+                          </TableCell>
+                          <TableCell className="text-white align-top">
+                            <div className="flex flex-col gap-1 max-w-xs">
+                              <span className="truncate" title={item.artwork_url}>{item.artwork_url}</span>
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="outline" className="h-6 px-2 border-blue-600 text-blue-300" onClick={() => { navigator.clipboard.writeText(item.artwork_url); toast({ title: 'Copied'}); }}>Copy</Button>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-white">
+                            <Select value={item.artist_id || '__none'} onValueChange={(val)=> onAssignArtist(item.id, val)}>
+                              <SelectTrigger className="bg-black border-red-600 text-white"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                              <SelectContent className="bg-black border-red-600 max-h-72 overflow-y-auto">
+                                <SelectItem value="__none">(None)</SelectItem>
+                                {artists.map(ar => <SelectItem key={ar.id} value={ar.id}>{ar.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {assigningArtworkId === item.id && <span className="text-xs text-gray-400">Saving...</span>}
+                          </TableCell>
+                          <TableCell className="text-white text-xs">
+                            <div className="flex flex-wrap gap-1 max-w-sm">
+                              {item.usages && item.usages.length ? item.usages.map(u => {
+                                const label = `${u.character_type === 'killer' ? 'Killer' : 'Survivor'}:${u.character_id}`;
+                                const fieldLabel = u.field_name === 'artist_urls' ? 'Artist List' : u.field_name === 'legacy_header_urls' ? 'Legacy Header' : u.field_name === 'header_url' ? 'Header' : u.field_name === 'background_image_url' ? 'Background' : u.field_name === 'image_url' ? 'Image' : u.field_name;
+                                return (
+                                  <span key={u.usage_id} className="px-2 py-1 bg-red-700/40 rounded border border-red-800 text-[10px] leading-none flex items-center gap-1" title={`${label} • ${fieldLabel}`}>{label}<span className="opacity-60">/</span>{fieldLabel}</span>
+                                );
+                              }) : <span className="text-gray-500">None</span>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-white">
+                            <Button size="sm" variant="destructive" className="bg-red-700 hover:bg-red-800" disabled={deletingArtworkId===item.id} onClick={() => onDelete(item.id)}>
+                              {deletingArtworkId===item.id ? 'Deleting...' : 'Delete'}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </details>
+          </div>
+        ))}
+      </div>
+    );
+  };
   const [submissionSort, setSubmissionSort] = useState<'newest' | 'oldest'>('newest');
   const [playerSearchTerm, setPlayerSearchTerm] = useState('');
   const [playerSort, setPlayerSort] = useState<'added_at_desc' | 'added_at_asc' | 'username_asc' | 'username_desc' | 'character_asc' | 'character_desc'>('added_at_desc');
@@ -297,12 +502,12 @@ export default function AdminPage() {
     }
   }, [lockoutTimeRemaining, loginAttempts.isLocked]);
 
-  // Fetch storage items when bucket changes
+  // Fetch storage items when bucket changes ONLY if storage tab active (defer heavy listing)
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && activeTab === 'storage-manager') {
       fetchStorageItems(selectedBucket);
     }
-  }, [selectedBucket, isAuthenticated]);
+  }, [selectedBucket, isAuthenticated, activeTab]);
 
   // Auto-expand folders in storage manager
   useEffect(() => {
@@ -339,8 +544,8 @@ export default function AdminPage() {
       fetchSubmissionStats(),
       fetchCharacters(),
       fetchAllCharacters(),
-      fetchArtists(),
-      fetchStorageItems(selectedBucket)
+      fetchArtists()
+      // Intentionally skipping storage listing here for faster initial paint
     ]);
     setLoading(false);
   };
@@ -433,6 +638,23 @@ export default function AdminPage() {
         } else {
           setSubmissions(prev => [...prev, ...data]);
         }
+
+        // Recompute last approved timestamps using all submissions (existing + new)
+        const combined = reset ? data : [...submissions, ...data];
+        const approved = combined.filter(s => s.status === 'approved' && s.reviewed_at);
+        if (approved.length) {
+          // Sort descending by reviewed_at
+            approved.sort((a, b) => (a.reviewed_at > b.reviewed_at ? -1 : 1));
+            setLastApprovedGlobal(approved[0].reviewed_at);
+            const killerApproved = approved.find(a => a.killer_id);
+            setLastApprovedKiller(killerApproved ? killerApproved.reviewed_at : null);
+            const survivorApproved = approved.find(a => a.survivor_id);
+            setLastApprovedSurvivor(survivorApproved ? survivorApproved.reviewed_at : null);
+        } else if (reset) {
+          setLastApprovedGlobal(null);
+          setLastApprovedKiller(null);
+          setLastApprovedSurvivor(null);
+        }
         
         if (data.length < SUBMISSIONS_PAGE_SIZE) {
           setHasMoreSubmissions(false);
@@ -498,6 +720,32 @@ export default function AdminPage() {
     }
   };
 
+  // Fetch artworks in pages to improve initial load & scrolling performance
+  const fetchAllArtworks = useCallback(async () => {
+    if (artworksLoading) return;
+    try {
+      setArtworksLoading(true);
+      const allRecords: ArtworkRecord[] = [];
+      let offset = 0;
+
+      while (true) {
+        const batch = await fetchArtworks(offset, ARTWORKS_PAGE_SIZE);
+        if (!batch.length) break;
+
+        allRecords.push(...batch);
+        if (batch.length < ARTWORKS_PAGE_SIZE) break;
+        offset += batch.length;
+      }
+
+      setArtworks(allRecords);
+    } catch (e: any) {
+      console.error('Error fetching artworks', e);
+      toast({ title: 'Error', description: 'Failed to fetch artworks', variant: 'destructive' });
+    } finally {
+      setArtworksLoading(false);
+    }
+  }, [artworksLoading, toast]);
+
 
   const fetchStorageItems = async (bucket: string) => {
     setLoadingStorage(true);
@@ -552,6 +800,14 @@ export default function AdminPage() {
     }
   };
 
+  const filteredArtworks = useMemo(() => {
+    const term = artworkSearch.trim().toLowerCase();
+    if (!term) return artworks;
+    return artworks.filter(art => art.artwork_url.toLowerCase().includes(term));
+  }, [artworks, artworkSearch]);
+
+  const refreshArtworks = useCallback(() => { void fetchAllArtworks(); }, [fetchAllArtworks]);
+
 
   // --- AUTHENTICATION FUNCTIONS ---
   const handleLogin = async (e: React.FormEvent) => {
@@ -597,6 +853,7 @@ export default function AdminPage() {
     setP100Players([]);
     setArtists([]);
     setStorageItems([]);
+    setArtworks([]);
     toast({ title: 'Logged Out' });
   };
   
@@ -1103,12 +1360,16 @@ export default function AdminPage() {
 
     setUploadingArtwork(true);
     try {
-      const supabase = createAdminClient();
-      const selectedArtist = artists.find(a => a.id === artworkUploadForm.artistId);
-      const artistSlug = sanitizeFileName(selectedArtist?.name || 'unknown');
-      const timestamp = Date.now();
-      const fileExtension = artworkUploadForm.artworkFile.name.split('.').pop();
-      const fileName = `${artworkUploadForm.characterId}-${artistSlug}-${timestamp}-by-${artistSlug}.${fileExtension}`;
+  const supabase = createAdminClient();
+  const selectedArtist = artists.find(a => a.id === artworkUploadForm.artistId);
+  const artistNameRaw = (selectedArtist?.name || 'unknown').trim();
+  // Use a storage-safe base name, and URL-encode the artist identifier after "-by-".
+  // This preserves special characters when analytics runs decodeURIComponent() on URLs.
+  const timestamp = Date.now();
+  const fileExtension = artworkUploadForm.artworkFile.name.split('.').pop();
+  const baseSafe = sanitizeFileName(`${artworkUploadForm.characterId}-${timestamp}`);
+  const artistIdentifier = encodeURIComponent(artistNameRaw);
+  const fileName = `${baseSafe}-by-${artistIdentifier}.${fileExtension}`;
       
       const artworkUrl = await uploadImageToStorage(artworkUploadForm.artworkFile, 'artworks', fileName);
       
@@ -1261,12 +1522,18 @@ export default function AdminPage() {
 
   const sortedPlayers = useMemo(() => {
     let players = [...p100Players];
+    // Always primary sort: priority (higher first) if present
+    players.sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0));
+    // Then apply requested sort (excluding priority which is implicit)
     if (playerSort === 'character_asc' || playerSort === 'character_desc') {
-        players.sort((a, b) => {
-            const nameA = a.killers?.name || a.survivors?.name || '';
-            const nameB = b.killers?.name || b.survivors?.name || '';
-            return playerSort === 'character_asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-        });
+      players.sort((a, b) => {
+        const nameA = a.killers?.name || a.survivors?.name || '';
+        const nameB = b.killers?.name || b.survivors?.name || '';
+        const cmp = nameA.localeCompare(nameB);
+        return playerSort === 'character_asc' ? cmp : -cmp;
+      });
+      // Keep priority dominance by re-applying stable priority ordering
+      players.sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0));
     }
     return players;
   }, [p100Players, playerSort]);
@@ -1396,7 +1663,8 @@ export default function AdminPage() {
             <TabsTrigger value="survivors-table" className="data-[state=active]:bg-red-600">Survivors</TabsTrigger>
             <TabsTrigger value="players-table" className="data-[state=active]:bg-red-600">Players</TabsTrigger>
             <TabsTrigger value="artists-table" className="data-[state=active]:bg-red-600">Artists</TabsTrigger>
-            <TabsTrigger value="storage-manager" className="data-[state=active]:bg-red-600">Storage</TabsTrigger>
+            <TabsTrigger value="storage-manager" className="data-[state=active]:bg-red-600" onClick={() => { if(!storageItems.length) fetchStorageItems(selectedBucket); }}>Storage</TabsTrigger>
+            <TabsTrigger value="artworks" className="data-[state=active]:bg-red-600" onClick={() => { if(!artworks.length) refreshArtworks(); }}>Artworks</TabsTrigger>
           </TabsList>
 
           <TabsContent value="submissions" className="space-y-6">
@@ -1446,6 +1714,17 @@ export default function AdminPage() {
                         <SelectContent className="bg-black border-red-600"><SelectItem value="newest">Newest First</SelectItem><SelectItem value="oldest">Oldest First</SelectItem></SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <Label className="text-white">Search Username</Label>
+                    <Input value={submissionSearch} onChange={(e) => setSubmissionSearch(e.target.value)} placeholder="Type to filter" className="bg-black border-red-600 text-white ml-2 w-44" />
+                  </div>
+                </div>
+                <div className="text-xs text-gray-400 ml-auto">
+                  {(() => {
+                    const ts = filter === 'killer' ? lastApprovedKiller : filter === 'survivor' ? lastApprovedSurvivor : lastApprovedGlobal;
+                    if (!ts) return 'No approvals yet';
+                    try { return `Last approval: ${new Date(ts).toLocaleString()}`; } catch { return 'Last approval: (invalid date)'; }
+                  })()}
                 </div>
                 <Dialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
                     <DialogTrigger asChild>
@@ -1496,9 +1775,53 @@ export default function AdminPage() {
                 <Table>
                   <TableHeader><TableRow className="border-red-600"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Comment</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {submissions.length > 0 ? submissions.map((submission) => (
+                    {submissions.length > 0 ? submissions
+                      .filter(s => !submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))
+                      .map((submission) => (
                       <TableRow key={submission.id} className="border-red-600/20">
-                        <TableCell className="text-white">{submission.username}</TableCell>
+                        <TableCell className="text-white">
+                          {editingSubmissionUsername === submission.id ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={editingSubmissionValue}
+                                onChange={(e) => setEditingSubmissionValue(e.target.value)}
+                                className="bg-black border-red-600 text-white h-8"
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 h-8"
+                                onClick={async () => {
+                                  const newName = editingSubmissionValue.trim();
+                                  if (!newName) { toast({ title: 'Validation', description: 'Username cannot be empty.', variant: 'destructive' }); return; }
+                                  try {
+                                    const supabase = createAdminClient();
+                                    const { error } = await supabase.from('p100_submissions').update({ username: newName }).eq('id', submission.id);
+                                    if (error) throw error;
+                                    toast({ title: 'Updated', description: 'Username updated.' });
+                                    // reflect locally
+                                    setSubmissions(prev => prev.map(p => p.id === submission.id ? { ...p, username: newName } : p));
+                                    setEditingSubmissionUsername(null);
+                                    setEditingSubmissionValue('');
+                                  } catch (err) {
+                                    console.error(err);
+                                    toast({ title: 'Error', description: 'Failed to update username.', variant: 'destructive' });
+                                  }
+                                }}
+                              >Save</Button>
+                              <Button size="sm" variant="outline" className="h-8 border-red-600 text-white" onClick={() => { setEditingSubmissionUsername(null); setEditingSubmissionValue(''); }}>Cancel</Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span>{submission.username}</span>
+                              {submission.status === 'pending' && (
+                                <Button size="icon" variant="outline" className="h-6 w-6 border-blue-600 text-blue-400" onClick={() => { setEditingSubmissionUsername(submission.id); setEditingSubmissionValue(submission.username); }}>
+                                  <Pencil size={12} />
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-white">{getCharacterName(submission)}</TableCell>
                         <TableCell className="text-white">{new Date(submission.submitted_at).toLocaleDateString()}</TableCell>
                         <TableCell><span className={`px-2 py-1 rounded text-sm ${submission.status === 'pending' ? 'bg-yellow-600 text-black' : submission.status === 'approved' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{submission.status}</span></TableCell>
@@ -1884,7 +2207,7 @@ export default function AdminPage() {
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white">Killers Database</h2>
-                <Button onClick={() => setEditingKiller({ name: '', id: '', image_url: '', background_image_url: '', header_url: '', artist_urls: [], legacy_header_urls: [], order: allKillers.length + 1 })} className="bg-green-600 hover:bg-green-700">Add New Killer</Button>
+                <Button onClick={() => setEditingKiller({ name: '', id: '', image_url: '', background_image_url: '', header_url: '', artist_urls: [], legacy_header_urls: [], order: allKillers.length + 1, background_credit_name: '', background_credit_url: '' })} className="bg-green-600 hover:bg-green-700">Add New Killer</Button>
               </div>
               {loading ? <div className="text-white text-center py-8">Loading...</div> : (
                 <div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Image</TableHead><TableHead className="text-white">Name</TableHead><TableHead className="text-white">ID</TableHead><TableHead className="text-white">Order</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader><TableBody>
@@ -1902,7 +2225,7 @@ export default function AdminPage() {
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold text-white">Survivors Database</h2>
-                    <Button onClick={() => setEditingSurvivor({ name: '', id: '', image_url: '', background_image_url: '', header_url: '', artist_urls: [], legacy_header_urls: [], order_num: allSurvivors.length + 1 })} className="bg-green-600 hover:bg-green-700">Add New Survivor</Button>
+                    <Button onClick={() => setEditingSurvivor({ name: '', id: '', image_url: '', background_image_url: '', header_url: '', artist_urls: [], legacy_header_urls: [], order_num: allSurvivors.length + 1, background_credit_name: '', background_credit_url: '' })} className="bg-green-600 hover:bg-green-700">Add New Survivor</Button>
                 </div>
                 {loading ? <div className="text-white text-center py-8">Loading...</div> : (
                     <div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Image</TableHead><TableHead className="text-white">Name</TableHead><TableHead className="text-white">ID</TableHead><TableHead className="text-white">Order</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader><TableBody>
@@ -1971,7 +2294,7 @@ export default function AdminPage() {
                         </div>
                     )}
                     <Table>
-                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Favorite</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Favorite</TableHead><TableHead className="text-white">Priority</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {sortedPlayers.length > 0 ? sortedPlayers.map((player) => (<TableRow key={player.id} className="border-red-600/30">
                             <TableCell className="text-white font-medium">{player.username}</TableCell>
@@ -1980,10 +2303,39 @@ export default function AdminPage() {
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.p200 ? 'bg-purple-600' : 'bg-gray-600'}`}>{player.p200 ? 'P200' : 'P100'}</span></TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.legacy ? 'bg-orange-600' : 'bg-gray-600'}`}>{player.legacy ? 'Legacy' : 'Standard'}</span></TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.favorite ? 'bg-pink-600' : 'bg-gray-600'}`}>{player.favorite ? 'Favorite' : 'Standard'}</span></TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  defaultValue={player.priority ?? 0}
+                                  min={0}
+                                  className="w-16 bg-black border border-red-600 text-white text-xs rounded px-1 py-0.5"
+                                  onBlur={async (e) => {
+                                    const newVal = parseInt(e.target.value, 10);
+                                    if (isNaN(newVal)) return;
+                                    try {
+                                      const res = await fetch('/admin-panel-x8k2m9p7/update-priority', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ id: player.id, priority: newVal })
+                                      });
+                                      const json = await res.json();
+                                      if (!json.success) {
+                                        console.error('Priority update failed:', json.message);
+                                      } else {
+                                        fetchP100Players();
+                                      }
+                                    } catch(err) {
+                                      console.error('Priority update error', err);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </TableCell>
                             <TableCell className="text-gray-400">{new Date(player.added_at).toLocaleDateString()}</TableCell>
                             <TableCell><div className="flex gap-2"><Button onClick={() => setEditingPlayer(player)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deletePlayer(player.id)} disabled={deletingItem === player.id} size="sm" variant="destructive">{deletingItem === player.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                         </TableRow>)) : (
-                            <TableRow><TableCell colSpan={8} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={9} className="text-center text-gray-400 py-8">No players found for the current filters.</TableCell></TableRow>
                         )}
                       </TableBody>
                     </Table>
@@ -2009,7 +2361,7 @@ export default function AdminPage() {
                 )}
             </div>
           </TabsContent>
-          
+
           <TabsContent value="storage-manager" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
                 <h2 className="text-2xl font-bold text-white mb-6">Storage Manager</h2>
@@ -2053,7 +2405,7 @@ export default function AdminPage() {
                                                             <Button onClick={() => deleteStorageItem(item.bucket, item.path)} size="icon" variant="destructive" className="h-6 w-6" disabled={deletingFile === item.path}><Trash2 size={12} /></Button>
                                                         </div>
                                                     </div>
-                                                    {item.publicUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) && <img src={item.publicUrl} alt={item.name} className="w-full h-20 object-cover rounded mb-2"/>}
+                                                    {item.publicUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) && <img src={item.publicUrl} alt={item.name} className="w-full h-20 object-cover rounded mb-2" loading="lazy"/>}
                                                     <p className="text-xs text-gray-400 truncate">Path: {item.path}</p>
                                                     <p className="text-xs text-gray-400">Size: {formatFileSize(item.size)}</p>
                                                 </div>
@@ -2066,6 +2418,96 @@ export default function AdminPage() {
                         ))}
                     </div>
                 )}
+            </div>
+          </TabsContent>
+
+          {/* ARTWORKS TAB (moved inside <Tabs>) */}
+          <TabsContent value="artworks" className="space-y-6">
+            <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6 space-y-6">
+              <div className="flex flex-wrap gap-4 items-end">
+                <div>
+                  <Label className="text-white">Search (URL contains)</Label>
+                  <Input value={artworkSearch} onChange={(e)=>setArtworkSearch(e.target.value)} placeholder="Filter by URL" className="bg-black border-red-600 text-white w-64" />
+                </div>
+                <Button variant="outline" className="border-blue-600 text-blue-300" onClick={refreshArtworks} disabled={artworksLoading}>Refresh</Button>
+                <div className="text-xs text-gray-400">Loaded: {artworks.length}</div>
+              </div>
+              {artworksLoading && <div className="text-white">Loading artworks...</div>}
+
+              {/* PROMOTION SECTION: raw artist / legacy URLs not yet normalized */}
+              <PromotionSection
+                killers={allKillers}
+                survivors={allSurvivors}
+                artworks={artworks}
+                promotingUrl={promotingUrl}
+                promotingAll={promotingAll}
+                onPromote={async ({ url, characterType, characterId, fieldName }) => {
+                  try {
+                    setPromotingUrl(url);
+                    await upsertArtworkAndUsage({ url, characterType, characterId, fieldName });
+                    toast({ title: 'Promoted', description: 'Artwork normalized.' });
+                    await fetchAllArtworks();
+                  } catch(e:any) {
+                    console.error(e);
+                    toast({ title: 'Error', description: 'Failed to promote', variant: 'destructive'});
+                  } finally {
+                    setPromotingUrl(null);
+                  }
+                }}
+                onPromoteBatch={async (entries) => {
+                  if (!entries.length) return;
+                  try {
+                    setPromotingAll(true);
+                    let successCount = 0;
+                    for (const entry of entries) {
+                      try {
+                        await upsertArtworkAndUsage({ url: entry.url, characterType: entry.characterType, characterId: entry.characterId, fieldName: entry.fieldName });
+                        successCount += 1;
+                      } catch (err) {
+                        console.error('Failed to normalize artwork', entry, err);
+                      }
+                    }
+                    toast({ title: 'Normalization complete', description: `Processed ${successCount} of ${entries.length} links.` });
+                    await fetchAllArtworks();
+                  } catch (batchErr) {
+                    console.error(batchErr);
+                    toast({ title: 'Error', description: 'Bulk normalization failed.', variant: 'destructive' });
+                  } finally {
+                    setPromotingAll(false);
+                    setPromotingUrl(null);
+                  }
+                }}
+              />
+
+              <GroupedArtworks
+                artworks={filteredArtworks}
+                artists={artists}
+                assigningArtworkId={assigningArtworkId}
+                deletingArtworkId={deletingArtworkId}
+                promotingUrl={promotingUrl}
+                onAssignArtist={async (artworkId, artistId) => {
+                  try {
+                    setAssigningArtworkId(artworkId);
+                    await updateArtworkArtist(artworkId, artistId === '__none' ? null : artistId);
+                    await fetchAllArtworks();
+                    toast({ title: 'Updated'});
+                  } catch(e:any){
+                    console.error(e); toast({ title: 'Error', description: 'Cannot update', variant: 'destructive'});
+                  } finally { setAssigningArtworkId(null);} 
+                }}
+                onDelete={async (artworkId) => {
+                  if(!confirm('Delete this artwork?')) return;
+                  try {
+                    setDeletingArtworkId(artworkId);
+                    await deleteArtwork(artworkId);
+                    await fetchAllArtworks();
+                    toast({ title: 'Deleted'});
+                  } catch(e:any){
+                    console.error(e);
+                    toast({ title: 'Error', description: 'Delete failed', variant: 'destructive'});
+                  } finally { setDeletingArtworkId(null);} 
+                }}
+              />
             </div>
           </TabsContent>
         </Tabs>
@@ -2081,6 +2523,19 @@ export default function AdminPage() {
                         <div><Label className="text-white">Image URL</Label><div className="flex gap-2"><Input value={editingKiller.image_url || ''} onChange={(e) => setEditingKiller({...editingKiller, image_url: e.target.value})} className="bg-black border-red-600 text-white flex-1"/><Button onClick={() => openFilePicker('single', 'image_url', 'killer')} className="bg-blue-600 hover:bg-blue-700" type="button">Browse</Button></div></div>
                         <div><Label className="text-white">Background URL</Label><div className="flex gap-2"><Input value={editingKiller.background_image_url || ''} onChange={(e) => setEditingKiller({...editingKiller, background_image_url: e.target.value})} className="bg-black border-red-600 text-white flex-1"/><Button onClick={() => openFilePicker('single', 'background_image_url', 'killer')} className="bg-blue-600 hover:bg-blue-700" type="button">Browse</Button></div></div>
                         <div><Label className="text-white">Header URL</Label><div className="flex gap-2"><Input value={editingKiller.header_url || ''} onChange={(e) => setEditingKiller({...editingKiller, header_url: e.target.value})} className="bg-black border-red-600 text-white flex-1"/><Button onClick={() => openFilePicker('single', 'header_url', 'killer')} className="bg-blue-600 hover:bg-blue-700" type="button">Browse</Button></div></div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-white">Background Credit Name</Label>
+                            <Input value={editingKiller.background_credit_name || ''} onChange={(e) => setEditingKiller({...editingKiller, background_credit_name: e.target.value})} placeholder="e.g. ArtistName" className="bg-black border-red-600 text-white"/>
+                          </div>
+                          <div>
+                            <Label className="text-white">Background Credit URL</Label>
+                            <Input value={editingKiller.background_credit_url || ''} onChange={(e) => setEditingKiller({...editingKiller, background_credit_url: e.target.value})} placeholder="https://..." className="bg-black border-red-600 text-white"/>
+                            {editingKiller.background_credit_url && !/^https?:\/\//i.test(editingKiller.background_credit_url) && (
+                              <p className="text-xs text-amber-400 mt-1">URL should start with http:// or https://</p>
+                            )}
+                          </div>
+                        </div>
                         <div><Label className="text-white">Artist URLs</Label><Button onClick={() => openFilePicker('multiple', 'artist_urls', 'killer')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Artist URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingKiller.artist_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'artist_urls', 'killer')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
                         <div><Label className="text-white">Legacy Header URLs</Label><Button onClick={() => openFilePicker('multiple', 'legacy_header_urls', 'killer')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Legacy URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingKiller.legacy_header_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'legacy_header_urls', 'killer')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
                         <div><Label className="text-white">Order</Label><Input type="number" value={editingKiller.order || 0} onChange={(e) => setEditingKiller({...editingKiller, order: parseInt(e.target.value)})} className="bg-black border-red-600 text-white"/></div>
@@ -2102,6 +2557,19 @@ export default function AdminPage() {
                         <div><Label className="text-white">Image URL</Label><div className="flex gap-2"><Input value={editingSurvivor.image_url || ''} onChange={(e) => setEditingSurvivor({...editingSurvivor, image_url: e.target.value})} className="bg-black border-red-600 text-white flex-1"/><Button onClick={() => openFilePicker('single', 'image_url', 'survivor')} className="bg-blue-600 hover:bg-blue-700" type="button">Browse</Button></div></div>
                         <div><Label className="text-white">Background URL</Label><div className="flex gap-2"><Input value={editingSurvivor.background_image_url || ''} onChange={(e) => setEditingSurvivor({...editingSurvivor, background_image_url: e.target.value})} className="bg-black border-red-600 text-white flex-1"/><Button onClick={() => openFilePicker('single', 'background_image_url', 'survivor')} className="bg-blue-600 hover:bg-blue-700" type="button">Browse</Button></div></div>
                         <div><Label className="text-white">Header URL</Label><div className="flex gap-2"><Input value={editingSurvivor.header_url || ''} onChange={(e) => setEditingSurvivor({...editingSurvivor, header_url: e.target.value})} className="bg-black border-red-600 text-white flex-1"/><Button onClick={() => openFilePicker('single', 'header_url', 'survivor')} className="bg-blue-600 hover:bg-blue-700" type="button">Browse</Button></div></div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-white">Background Credit Name</Label>
+                            <Input value={editingSurvivor.background_credit_name || ''} onChange={(e) => setEditingSurvivor({...editingSurvivor, background_credit_name: e.target.value})} placeholder="e.g. ArtistName" className="bg-black border-red-600 text-white"/>
+                          </div>
+                          <div>
+                            <Label className="text-white">Background Credit URL</Label>
+                            <Input value={editingSurvivor.background_credit_url || ''} onChange={(e) => setEditingSurvivor({...editingSurvivor, background_credit_url: e.target.value})} placeholder="https://..." className="bg-black border-red-600 text-white"/>
+                            {editingSurvivor.background_credit_url && !/^https?:\/\//i.test(editingSurvivor.background_credit_url) && (
+                              <p className="text-xs text-amber-400 mt-1">URL should start with http:// or https://</p>
+                            )}
+                          </div>
+                        </div>
                         <div><Label className="text-white">Artist URLs</Label><Button onClick={() => openFilePicker('multiple', 'artist_urls', 'survivor')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Artist URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingSurvivor.artist_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'artist_urls', 'survivor')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
                         <div><Label className="text-white">Legacy Header URLs</Label><Button onClick={() => openFilePicker('multiple', 'legacy_header_urls', 'survivor')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Legacy URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingSurvivor.legacy_header_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'legacy_header_urls', 'survivor')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
                         <div><Label className="text-white">Order</Label><Input type="number" value={editingSurvivor.order_num || 0} onChange={(e) => setEditingSurvivor({...editingSurvivor, order_num: parseInt(e.target.value)})} className="bg-black border-red-600 text-white"/></div>
@@ -2169,6 +2637,8 @@ export default function AdminPage() {
                 </DialogContent>
             </Dialog>
         )}
+
+        {/* Removed orphaned Artworks TabsContent (now inside <Tabs>) */}
 
         {showFilePicker && filePickerMode && (
           <Dialog open={showFilePicker} onOpenChange={() => setShowFilePicker(false)}>

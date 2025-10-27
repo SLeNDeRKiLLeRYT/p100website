@@ -20,6 +20,13 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'images.pexels.com',
       },
+      // Added to support Unsplash backgrounds used in BackgroundWrapper
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
     // These settings are used by the production server
     formats: ['image/webp', 'image/avif'],

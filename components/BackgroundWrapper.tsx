@@ -59,6 +59,10 @@ export default function BackgroundWrapper({ children, characterId, backgroundUrl
             quality={80}
             priority
             sizes="100vw"
+            onError={() => {
+              // Fallback: remove background to stop infinite error loops if URL invalid / domain not allowed
+              setBackground('');
+            }}
           />
         )}
         <div className="absolute inset-0 bg-black/50" />

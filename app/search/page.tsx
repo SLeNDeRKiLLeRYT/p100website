@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Navigation from '@/components/ui/Navigation';
 import BackgroundWrapper from '@/components/BackgroundWrapper';
 import { Search, User } from 'lucide-react';
@@ -124,6 +125,13 @@ export default function SearchPage() {
               >
                 SEARCH
               </button>
+            </div>
+
+            {/* Link to check submission status */}
+            <div className="text-center mt-6">
+              <Link href="/submission/status" className="text-red-400 hover:text-red-300 font-bold underline">
+                Already submitted? Check your submission status
+              </Link>
             </div>
           </div>
           <div className="text-center py-16 space-y-6">

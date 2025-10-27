@@ -8,6 +8,7 @@ import {
   deleteArtist as deleteArtistService, 
   updateArtist as updateArtistService 
 } from '@/lib/artists-service';
+import { updatePlayerPriority } from '@/lib/players-service';
 
 // --- UTILITY ACTION (used by other actions) ---
 
@@ -275,6 +276,31 @@ export async function deletePlayerAction(playerId: string) {
     return { success: true, message: 'Player deleted.' };
   } catch (error: any) {
     return { success: false, message: error.message || 'Failed to delete player.' };
+  }
+}
+
+// Player priority update
+export async function updatePlayerPriorityAction(playerId: string, priority: number) {
+  try {
+    if (!playerId) return { success: false, message: 'Player ID required.' };
+    if (!Number.isFinite(priority)) return { success: false, message: 'Priority must be a number.' };
+    const supabase = createAdminClient();
+    await updatePlayerPriority(supabase, playerId, priority);
+    revalidatePath('/admin');
+    // Try to find related character to revalidate its public page
+    const { data: playerRow } = await supabase
+      .from('p100_players')
+      .select('killer_id, survivor_id')
+      .eq('id', playerId)
+      .single();
+    if (playerRow?.killer_id) {
+      revalidatePath(`/killers/${playerRow.killer_id}`);
+    } else if (playerRow?.survivor_id) {
+      revalidatePath(`/survivors/${playerRow.survivor_id}`);
+    }
+    return { success: true, message: 'Priority updated.' };
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Failed to update priority.' };
   }
 }
 
