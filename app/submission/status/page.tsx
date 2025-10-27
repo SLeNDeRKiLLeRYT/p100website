@@ -179,8 +179,8 @@ export default function SubmissionStatusPage() {
   };
 
   const getCharacterName = (submission: Submission) => {
-    if (submission.killer_id) return `Killer: ${killerNames[submission.killer_id] || submission.killer_id}`;
-    if (submission.survivor_id) return `Survivor: ${survivorNames[submission.survivor_id] || submission.survivor_id}`;
+    if (submission.killer_id) return `${killerNames[submission.killer_id] || submission.killer_id}`;
+    if (submission.survivor_id) return `${survivorNames[submission.survivor_id] || submission.survivor_id}`;
     return "Unknown Character";
   };
 
@@ -229,7 +229,7 @@ export default function SubmissionStatusPage() {
                   </h3>
                   {submissions.map((submission) => (
                     <div key={submission.id} className="p-4 border border-gray-700 rounded-lg bg-gray-900/50">
-                      <p><strong>Character:</strong> {getCharacterName(submission)}</p>
+                      <p><strong>Submitted P100:</strong> {getCharacterName(submission)}</p>
                       <p><strong>Submitted At:</strong> {new Date(submission.created_at).toLocaleString()}</p>
                       <p>
                         <strong>Status:</strong>{" "}
