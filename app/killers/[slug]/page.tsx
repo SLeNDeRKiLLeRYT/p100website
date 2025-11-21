@@ -6,7 +6,11 @@ import BackgroundWrapper from '@/components/BackgroundWrapper';
 import CharacterNavigation from '@/components/CharacterNavigation';
 import { createServerClient } from '@/lib/supabase-client';
 import { getCharacterNavigation } from '@/lib/character-navigation';
-import { analyzeCharacterArtworks, logDetailedArtworkAnalysis } from '@/lib/artist-analytics';
+import { getCharacterArtworks } from '@/lib/artwork-management';
+
+// Force dynamic rendering and disable caching for real-time updates
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // Define types for our data
 interface P100Player {
@@ -16,6 +20,15 @@ interface P100Player {
   p200: boolean | null;
   legacy: boolean | null; // Add legacy field
   favorite: boolean | null; // Add favorite field
+}
+
+interface ArtworkDetail {
+  artwork_url: string;
+  artist_name: string | null;
+  artist_url: string | null;
+  platform: string | null;
+  usage_type: string;
+  display_order: number | null;
 }
 
 interface KillerData {
@@ -29,6 +42,10 @@ interface KillerData {
   background_image_url?: string;
   background_credit_name?: string | null;
   background_credit_url?: string | null;
+  gallery_artworks?: ArtworkDetail[];
+  legacy_headers?: ArtworkDetail[];
+  header_artwork?: ArtworkDetail;
+  background_artwork?: ArtworkDetail;
 }
 
 // Helper function to check if legacy header should be displayed
@@ -70,7 +87,7 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
   const supabase = createServerClient();
   const { data: killer, error: killerError } = await supabase
     .from('killers')
-    .select('id, name, image_url, created_at, updated_at, order, background_image_url, header_url, artist_urls, legacy_header_urls, background_credit_name, background_credit_url')
+    .select('id, name, image_url, created_at, updated_at, order, background_credit_name, background_credit_url')
     .eq('id', slug)
     .single();
   
@@ -82,6 +99,15 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
     console.log('No killer found for slug:', slug);
     return null;
   }
+  
+  // Fetch artworks from centralized table
+  const artworks = await getCharacterArtworks(killer.id, 'killer');
+  
+  // Group artworks by usage type
+  const galleryArtworks = artworks.filter(a => a.usage_type === 'gallery');
+  const legacyHeaders = artworks.filter(a => a.usage_type === 'legacy_header');
+  const header = artworks.find(a => a.usage_type === 'header');
+  const background = artworks.find(a => a.usage_type === 'background');
   
   let players: any[] = [];
   const { data: playersById, error: playersByIdError } = await supabase
@@ -110,21 +136,17 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
     }
   }
   
-  let parsedArtistUrls = null;
-  if (killer.artist_urls) {
-    try {
-      parsedArtistUrls = typeof killer.artist_urls === 'string' 
-        ? JSON.parse(killer.artist_urls) 
-        : killer.artist_urls;
-      console.log('✓ Identified artist names:', parsedArtistUrls?.length || 0, 'URLs from killer data');
-    } catch (error) {
-      console.error('Error parsing artist_urls:', error);
-    }
-  }
   return {
     ...killer,
-    artist_urls: parsedArtistUrls,
-    players: players || []
+    artist_urls: galleryArtworks.map(a => a.artwork_url),
+    legacy_header_urls: legacyHeaders.map(a => a.artwork_url),
+    header_url: header?.artwork_url,
+    background_image_url: background?.artwork_url,
+    players: players || [],
+    gallery_artworks: galleryArtworks,
+    legacy_headers: legacyHeaders,
+    header_artwork: header,
+    background_artwork: background
   };
 }
 
@@ -137,18 +159,12 @@ export default async function KillerPage({ params }: { params: { slug: string } 
   
   const navigation = await getCharacterNavigation(params.slug, 'killer');
 
-  const analytics = await analyzeCharacterArtworks(
-    killerData.id,
-    killerData.name,
-    'killer',
-    (killerData.artist_urls as string[]) || [],
-    killerData.legacy_header_urls
-  );
+  // Use artwork details directly from centralized database
+  const galleryArtworkDetails = killerData.gallery_artworks || [];
+  const legacyHeaderDetails = killerData.legacy_headers || [];
   
-  logDetailedArtworkAnalysis(analytics);
-
-  const artworkAnalyticsMap = new Map(analytics.artworkDetails.map(detail => [detail.artworkUrl, detail]));
-  const galleryArtworkDetails = analytics.artworkDetails.filter(detail => killerData.artist_urls?.includes(detail.artworkUrl));
+  // Create a map for quick lookup of legacy header artwork details
+  const legacyHeaderMap = new Map(legacyHeaderDetails.map(detail => [detail.artwork_url, detail]));
 
   return (
     <>
@@ -177,14 +193,14 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                 <div className="hidden md:flex items-center justify-center gap-8 mb-8">
                   <div className="flex-shrink-0">                    
                     {(() => {
-                        const detail = artworkAnalyticsMap.get(killerData.legacy_header_urls![0]!);
+                        const detail = legacyHeaderMap.get(killerData.legacy_header_urls![0]!);
                         return (
-                          <a href={detail?.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                          <a href={detail?.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                             <div className="relative w-48 h-64 overflow-hidden rounded-lg shadow-lg">
                               <Image src={killerData.legacy_header_urls![0]!} alt={`${killerData.name} artwork`} fill className="object-contain" priority/>
                             </div>
                             <div className="mt-2 text-center">
-                               <p className="text-sm text-gray-300">Art by {detail?.artist?.name || 'Unknown'}</p>
+                               <p className="text-sm text-gray-300">Art by {detail?.artist_name || 'Unknown'}</p>
                             </div>
                           </a>
                         );
@@ -221,16 +237,16 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     {(() => {
-                      const detail = artworkAnalyticsMap.get(killerData.legacy_header_urls![0]!);
+                      const detail = legacyHeaderMap.get(killerData.legacy_header_urls![0]!);
                       return (
                         <div>
-                          <a href={detail?.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                          <a href={detail?.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                             <div className="relative aspect-[3/4] overflow-hidden rounded-lg shadow-lg">
                               <Image src={killerData.legacy_header_urls![0]!} alt={`${killerData.name} artwork`} fill className="object-contain" priority/>
                             </div>
                           </a>
                           <div className="mt-2 text-center">
-                            <p className="text-sm text-gray-300">Art by {detail?.artist?.name || 'Unknown'}</p>
+                            <p className="text-sm text-gray-300">Art by {detail?.artist_name || 'Unknown'}</p>
                           </div>
                         </div>
                       );
@@ -274,12 +290,12 @@ export default async function KillerPage({ params }: { params: { slug: string } 
             {/* Left Side Artist Gallery (Grid Col 1) */}
             <div className="hidden xl:block space-y-6 pt-12 max-w-sm mx-auto">
               {galleryArtworkDetails.slice(0, Math.ceil(galleryArtworkDetails.length / 2)).map((detail, index) => (
-                  <a key={`left-artwork-${index}`} href={detail.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                  <a key={`left-artwork-${index}`} href={detail.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                       <div className="relative overflow-hidden rounded-lg shadow-lg">
-                          <Image src={detail.artworkUrl} alt={`${killerData.name} artwork by ${detail.artist?.name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
+                          <Image src={detail.artwork_url} alt={`${killerData.name} artwork by ${detail.artist_name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
                       </div>
                       <div className="mt-2 text-center">
-                          <p className="text-sm text-gray-300">Art by: {detail.artist?.name || 'Unknown'}</p>
+                          <p className="text-sm text-gray-300">Art by: {detail.artist_name || 'Unknown'}</p>
                       </div>
                   </a>
               ))}
@@ -391,11 +407,11 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                   <h2 className="text-xl font-mono mb-4 text-center">Artwork Gallery</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {galleryArtworkDetails.map((detail, index) => (
-                      <a key={`mobile-artwork-${index}`} href={detail.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block">
+                      <a key={`mobile-artwork-${index}`} href={detail.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block">
                         <div className="relative overflow-hidden rounded-lg">
-                          <Image src={detail.artworkUrl} alt={`${killerData.name} artwork by ${detail.artist?.name || 'Unknown'}`} width={0} height={0} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="w-full h-auto transition-transform hover:scale-105" style={{ width: 'auto', height: 'auto' }} loading="lazy"/>
+                          <Image src={detail.artwork_url} alt={`${killerData.name} artwork by ${detail.artist_name || 'Unknown'}`} width={0} height={0} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="w-full h-auto transition-transform hover:scale-105" style={{ width: 'auto', height: 'auto' }} loading="lazy"/>
                           <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-2 text-center">
-                            <p className="text-sm">Art by: {detail.artist?.name || 'Unknown'}</p>
+                            <p className="text-sm">Art by: {detail.artist_name || 'Unknown'}</p>
                           </div>
                         </div>
                       </a>
@@ -408,12 +424,12 @@ export default async function KillerPage({ params }: { params: { slug: string } 
             {/* Right Side Artist Gallery (Grid Col 3) */}
             <div className="hidden xl:block space-y-6 pt-12 max-w-sm mx-auto">
               {galleryArtworkDetails.slice(Math.ceil(galleryArtworkDetails.length / 2)).map((detail, index) => (
-                  <a key={`right-artwork-${index}`} href={detail.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                  <a key={`right-artwork-${index}`} href={detail.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                       <div className="relative overflow-hidden rounded-lg shadow-lg">
-                          <Image src={detail.artworkUrl} alt={`${killerData.name} artwork by ${detail.artist?.name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
+                          <Image src={detail.artwork_url} alt={`${killerData.name} artwork by ${detail.artist_name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
                       </div>
                       <div className="mt-2 text-center">
-                          <p className="text-sm text-gray-300">Art by: {detail.artist?.name || 'Unknown'}</p>
+                          <p className="text-sm text-gray-300">Art by: {detail.artist_name || 'Unknown'}</p>
                       </div>
                   </a>
               ))}

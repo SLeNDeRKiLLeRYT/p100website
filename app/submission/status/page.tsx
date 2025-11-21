@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import supabase from "@/lib/supabase-client";
 import BackgroundWrapper from "@/components/BackgroundWrapper";
+import Navigation from "@/components/ui/Navigation";
 
 type SubmissionStatus = "pending" | "approved" | "rejected";
 
@@ -186,7 +187,11 @@ export default function SubmissionStatusPage() {
 
   return (
     <BackgroundWrapper backgroundUrl="/status.png">
-      <div className="container mx-auto p-4 flex justify-center items-center min-h-screen">
+      {/* Navigation added for consistency with other pages */}
+      <div className="container mx-auto px-4 pt-6">
+        <Navigation />
+      </div>
+      <div className="container mx-auto p-4 flex justify-center items-start min-h-[calc(100vh-140px)]">
         <Card className="max-w-2xl w-full mx-auto bg-black/80 border border-red-600/50 text-white">
           <CardHeader>
             <CardTitle className="text-center text-3xl font-bold tracking-wider uppercase">Check Your Submission Status</CardTitle>

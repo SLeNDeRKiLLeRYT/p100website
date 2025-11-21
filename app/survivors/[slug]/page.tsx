@@ -7,7 +7,7 @@ import LensFlare from '@/components/LensFlare';
 import CharacterNavigation from '@/components/CharacterNavigation';
 import { createServerClient } from '@/lib/supabase-client';
 import { getCharacterNavigation } from '@/lib/character-navigation';
-import { analyzeCharacterArtworks, logDetailedArtworkAnalysis } from '@/lib/artist-analytics';
+import { getCharacterArtworks } from '@/lib/artwork-management';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -22,6 +22,15 @@ interface P100Player {
   favorite: boolean | null; // Add favorite field
 }
 
+interface ArtworkDetail {
+  artwork_url: string;
+  artist_name: string | null;
+  artist_url: string | null;
+  platform: string | null;
+  usage_type: string;
+  display_order: number | null;
+}
+
 interface SurvivorData {
   id: string;
   name: string;
@@ -33,6 +42,10 @@ interface SurvivorData {
   background_image_url?: string;
   background_credit_name?: string | null;
   background_credit_url?: string | null;
+  gallery_artworks?: ArtworkDetail[];
+  legacy_headers?: ArtworkDetail[];
+  header_artwork?: ArtworkDetail;
+  background_artwork?: ArtworkDetail;
 }
 
 // Helper function to check if legacy header should be displayed
@@ -76,7 +89,7 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
   
   const { data: survivor, error: survivorError } = await supabase
     .from('survivors')
-    .select('*')
+    .select('id, name, image_url, created_at, updated_at, order_num, background_credit_name, background_credit_url')
     .eq('id', slug)
     .single();
   
@@ -89,6 +102,15 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
     console.log('No survivor found for slug:', slug);
     return null;
   }
+  
+  // Fetch artworks from centralized table
+  const artworks = await getCharacterArtworks(survivor.id, 'survivor');
+  
+  // Group artworks by usage type
+  const galleryArtworks = artworks.filter(a => a.usage_type === 'gallery');
+  const legacyHeaders = artworks.filter(a => a.usage_type === 'legacy_header');
+  const header = artworks.find(a => a.usage_type === 'header');
+  const background = artworks.find(a => a.usage_type === 'background');
   
   let players: any[] = [];
   const { data: playersById, error: playersByIdError } = await supabase
@@ -118,23 +140,17 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
     }
   }
   
-  let parsedArtistUrls = null;
-  if (survivor.artist_urls) {
-    try {
-      parsedArtistUrls = typeof survivor.artist_urls === 'string' 
-        ? JSON.parse(survivor.artist_urls) 
-        : survivor.artist_urls;
-      
-      console.log('✓ Identified artist names:', parsedArtistUrls);
-    } catch (error) {
-      console.error('Error parsing artist_urls:', error);
-    }
-  }
-  
   return {
     ...survivor,
-    artist_urls: parsedArtistUrls,
-    players: players || []
+    artist_urls: galleryArtworks.map(a => a.artwork_url),
+    legacy_header_urls: legacyHeaders.map(a => a.artwork_url),
+    header_url: header?.artwork_url,
+    background_image_url: background?.artwork_url,
+    players: players || [],
+    gallery_artworks: galleryArtworks,
+    legacy_headers: legacyHeaders,
+    header_artwork: header,
+    background_artwork: background
   };
 }
 
@@ -146,19 +162,13 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
   }
   
   const navigation = await getCharacterNavigation(params.slug, 'survivor');
+
+  // Use artwork details directly from centralized database
+  const galleryArtworkDetails = survivorData.gallery_artworks || [];
+  const legacyHeaderDetails = survivorData.legacy_headers || [];
   
-  const analytics = await analyzeCharacterArtworks(
-    survivorData.id,
-    survivorData.name,
-    'survivor',
-    (survivorData.artist_urls as string[]) || [],
-    survivorData.legacy_header_urls
-  );
-
-  logDetailedArtworkAnalysis(analytics);
-
-  const artworkAnalyticsMap = new Map(analytics.artworkDetails.map(detail => [detail.artworkUrl, detail]));
-  const galleryArtworkDetails = analytics.artworkDetails.filter(detail => survivorData.artist_urls?.includes(detail.artworkUrl));
+  // Create a map for quick lookup of legacy header artwork details
+  const legacyHeaderMap = new Map(legacyHeaderDetails.map(detail => [detail.artwork_url, detail]));
   
   return (
     <>
@@ -185,19 +195,19 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
               <div className="mb-12">
                 <div className="hidden md:flex items-center justify-center gap-8 mb-8">
                   <div className="flex-shrink-0">
-                    {(() => {
-                        const detail = artworkAnalyticsMap.get(survivorData.legacy_header_urls![0]!);
+                      {(() => {
+                        const detail = legacyHeaderMap.get(survivorData.legacy_header_urls![0]!);
                         return (
-                          <a href={detail?.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                          <a href={detail?.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                             <div className="relative w-48 h-64 overflow-hidden rounded-lg shadow-lg">
                               <Image src={survivorData.legacy_header_urls![0]!} alt={`${survivorData.name} artwork`} fill className="object-contain" priority/>
                             </div>
                             <div className="mt-2 text-center">
-                               <p className="text-sm text-gray-300">Art by {detail?.artist?.name || 'Unknown'}</p>
+                               <p className="text-sm text-gray-300">Art by {detail?.artist_name || 'Unknown'}</p>
                             </div>
                           </a>
                         );
-                    })()}
+                      })()}
                   </div>
                   <div className="flex-1 max-w-md text-center">
                     <h1 className="text-3xl font-mono mb-6 underline">Welcome to the P100 {survivorData.name.toUpperCase()}</h1>
@@ -213,50 +223,50 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
                     </div>
                   </div>
                   <div className="flex-shrink-0">
-                    {(() => {
-                        const detail = artworkAnalyticsMap.get(survivorData.legacy_header_urls![1]!);
+                      {(() => {
+                        const detail = legacyHeaderMap.get(survivorData.legacy_header_urls![1]!);
                         return (
-                          <a href={detail?.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                          <a href={detail?.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                             <div className="relative w-48 h-64 overflow-hidden rounded-lg shadow-lg">
                               <Image src={survivorData.legacy_header_urls![1]!} alt={`${survivorData.name} perks`} fill className="object-contain" priority/>
                             </div>
                             <div className="mt-2 text-center">
-                               <p className="text-sm text-gray-300">Art by {detail?.artist?.name || 'Unknown'}</p>
+                               <p className="text-sm text-gray-300">Art by {detail?.artist_name || 'Unknown'}</p>
                             </div>
                           </a>
                         );
-                    })()}
+                      })()}
                   </div>
                 </div>
                 <div className="md:hidden space-y-6">
                   <h1 className="text-2xl font-mono mb-6 underline text-center">Welcome to the P100 {survivorData.name.toUpperCase()}</h1>
                   <div className="grid grid-cols-2 gap-4">
                     {(() => {
-                        const detail = artworkAnalyticsMap.get(survivorData.legacy_header_urls![0]!);
+                        const detail = legacyHeaderMap.get(survivorData.legacy_header_urls![0]!);
                         return (
                           <div>
-                            <a href={detail?.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                            <a href={detail?.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                               <div className="relative aspect-[3/4] overflow-hidden rounded-lg shadow-lg">
                                 <Image src={survivorData.legacy_header_urls![0]!} alt={`${survivorData.name} artwork`} fill className="object-contain" priority/>
                               </div>
                             </a>
                             <div className="mt-2 text-center">
-                              <p className="text-xs text-gray-300">Art by {detail?.artist?.name || 'Unknown'}</p>
+                              <p className="text-xs text-gray-300">Art by {detail?.artist_name || 'Unknown'}</p>
                             </div>
                           </div>
                         );
                     })()}
                     {(() => {
-                        const detail = artworkAnalyticsMap.get(survivorData.legacy_header_urls![1]!);
+                        const detail = legacyHeaderMap.get(survivorData.legacy_header_urls![1]!);
                         return (
                           <div>
-                            <a href={detail?.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                            <a href={detail?.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                               <div className="relative aspect-[3/4] overflow-hidden rounded-lg shadow-lg">
                                 <Image src={survivorData.legacy_header_urls![1]!} alt={`${survivorData.name} perks`} fill className="object-contain" priority/>
                               </div>
                             </a>
                             <div className="mt-2 text-center">
-                              <p className="text-xs text-gray-300">Art by {detail?.artist?.name || 'Unknown'}</p>
+                              <p className="text-xs text-gray-300">Art by {detail?.artist_name || 'Unknown'}</p>
                             </div>
                           </div>
                         );
@@ -306,12 +316,12 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
             {/* Left Side Artist Gallery (Grid Col 1) */}
             <div className="hidden xl:block space-y-6 pt-12 max-w-sm mx-auto">
               {galleryArtworkDetails.slice(0, Math.ceil(galleryArtworkDetails.length / 2)).map((detail, index) => (
-                  <a key={`left-artist-url-${index}`} href={detail.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                  <a key={`left-artist-url-${index}`} href={detail.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                       <div className="relative overflow-hidden rounded-lg shadow-lg">
-                          <Image src={detail.artworkUrl} alt={`${survivorData.name} artwork by ${detail.artist?.name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
+                          <Image src={detail.artwork_url} alt={`${survivorData.name} artwork by ${detail.artist_name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
                       </div>
                       <div className="mt-2 text-center">
-                          <p className="text-sm text-gray-300">Art by: {detail.artist?.name || 'Unknown'}</p>
+                          <p className="text-sm text-gray-300">Art by: {detail.artist_name || 'Unknown'}</p>
                       </div>
                   </a>
               ))}
@@ -423,11 +433,11 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
                   <h2 className="text-xl font-mono mb-4 text-center">Artwork Gallery</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {galleryArtworkDetails.map((detail, index) => (
-                      <a key={`mobile-artwork-${index}`} href={detail.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block">
+                      <a key={`mobile-artwork-${index}`} href={detail.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block">
                         <div className="relative overflow-hidden rounded-lg">
-                          <Image src={detail.artworkUrl} alt={`${survivorData.name} artwork by ${detail.artist?.name || 'Unknown'}`} width={0} height={0} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="w-full h-auto transition-transform hover:scale-105" style={{ width: 'auto', height: 'auto' }} loading="lazy"/>
+                          <Image src={detail.artwork_url} alt={`${survivorData.name} artwork by ${detail.artist_name || 'Unknown'}`} width={0} height={0} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="w-full h-auto transition-transform hover:scale-105" style={{ width: 'auto', height: 'auto' }} loading="lazy"/>
                           <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-2 text-center">
-                            <p className="text-sm">Art by: {detail.artist?.name || 'Unknown'}</p>
+                            <p className="text-sm">Art by: {detail.artist_name || 'Unknown'}</p>
                           </div>
                         </div>
                       </a>
@@ -440,12 +450,12 @@ export default async function SurvivorPage({ params }: { params: { slug: string 
             {/* Right Side Artist Gallery (Grid Col 3) */}
             <div className="hidden xl:block space-y-6 pt-12 max-w-sm mx-auto">
               {galleryArtworkDetails.slice(Math.ceil(galleryArtworkDetails.length / 2)).map((detail, index) => (
-                  <a key={`right-artist-url-${index}`} href={detail.artist?.url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
+                  <a key={`right-artist-url-${index}`} href={detail.artist_url || '#'} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
                       <div className="relative overflow-hidden rounded-lg shadow-lg">
-                          <Image src={detail.artworkUrl} alt={`${survivorData.name} artwork by ${detail.artist?.name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
+                          <Image src={detail.artwork_url} alt={`${survivorData.name} artwork by ${detail.artist_name || 'Unknown'}`} width={1800} height={1800} className="w-full h-auto object-contain"/>
                       </div>
                       <div className="mt-2 text-center">
-                          <p className="text-sm text-gray-300">Art by: {detail.artist?.name || 'Unknown'}</p>
+                          <p className="text-sm text-gray-300">Art by: {detail.artist_name || 'Unknown'}</p>
                       </div>
                   </a>
               ))}

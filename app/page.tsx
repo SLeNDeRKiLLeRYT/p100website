@@ -38,12 +38,16 @@ export default function Home() {
           </p>
           
           <div className="faq-section">
-            <h2 className="text-2xl md:text-3xl lg:text-4xl mb-4 md:mb-6">Want to add a P100?</h2>
-            <h3 className="text-xl md:text-2xl lg:text-3xl mb-4 md:mb-6">Right below :</h3>
-            
-            <div className="text-center mb-8 md:mb-12">
+            <h2 className="text-2xl md:text-3xl lg:text-4xl mb-4 md:mb-6">
+              Want to add a P100, or submitted one? Right below :
+            </h2>
+
+            <div className="flex flex-col sm:flex-row justify-center gap-6 text-center mb-8 md:mb-12">
               <Link href="/submission" className="nav-button-large inline-block rounded-lg">
                 🎯 SUBMIT P100
+              </Link>
+              <Link href="/submission/status" className="nav-button-large inline-block rounded-lg">
+                📄 CHECK SUBMISSIONS
               </Link>
             </div>
             

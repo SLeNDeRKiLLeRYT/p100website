@@ -55,8 +55,9 @@ export async function upsertArtworkAndUsage(params: {
   characterType: 'killer' | 'survivor';
   characterId: string;
   fieldName: string; // e.g. 'artist_urls' | 'legacy_header_urls' | 'header_url' | 'background_image_url' | 'image_url'
-}): Promise<void> {
-  const { url, characterType, characterId, fieldName } = params;
+  artistId?: string | null; // optional: set artist at creation time
+}): Promise<string> {
+  const { url, characterType, characterId, fieldName, artistId } = params;
   const admin = createAdminClient();
 
   // 1. Find or create artwork
@@ -72,7 +73,7 @@ export async function upsertArtworkAndUsage(params: {
   if (!artworkId) {
     const { data: inserted, error: insErr } = await admin
       .from('artist_artworks')
-      .insert({ artwork_url: url })
+      .insert({ artwork_url: url, artist_id: artistId ?? null })
       .select('id')
       .single();
     if (insErr) throw insErr;
@@ -97,4 +98,5 @@ export async function upsertArtworkAndUsage(params: {
       .insert({ artwork_id: artworkId, character_type: characterType, character_id: characterId, field_name: fieldName });
     if (usageInsErr) throw usageInsErr;
   }
+  return artworkId!;
 }

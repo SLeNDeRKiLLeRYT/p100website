@@ -5,12 +5,12 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, notFound } from 'next/navigation';
 import supabase, { createAdminClient, sanitizeInput, validateInput } from '@/lib/supabase-client';
 import React from 'react';
-import { fetchArtworks, updateArtworkArtist, deleteArtwork, ArtworkRecord, upsertArtworkAndUsage } from '@/lib/artworks-service';
 // You will need to export updateArtist from your service file
 import { getArtists, createArtist, deleteArtist, updateArtist, Artist, ArtistInsert } from '@/lib/artists-service';
 import Navigation from '@/components/ui/Navigation';
 import BackgroundWrapper from '@/components/BackgroundWrapper';
 import { useToast } from '@/hooks/use-toast';
+// local debounced value (avoid importing callback-debounce hook)
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,13 @@ interface StorageItem {
   created_at: string;
   updated_at: string;
   size: number;
+}
+
+// Legacy type kept for backward compatibility
+interface ArtworkRecord {
+  id: string;
+  artwork_url: string;
+  artist_id: string | null;
 }
 
 interface LoginAttempts {
@@ -172,6 +179,13 @@ export default function AdminPage() {
   const [artists, setArtists] = useState<Artist[]>([]);
   const [submissionStats, setSubmissionStats] = useState<SubmissionStats>({ total: 0, pending: 0, approved: 0, rejected: 0 });
   
+  // Blacklist state
+  const [blacklistedUsers, setBlacklistedUsers] = useState<any[]>([]);
+  const [blacklistSearch, setBlacklistSearch] = useState('');
+  const [newBlacklistUsername, setNewBlacklistUsername] = useState('');
+  const [newBlacklistReason, setNewBlacklistReason] = useState('');
+  const [isAddingToBlacklist, setIsAddingToBlacklist] = useState(false);
+  
   // UI State
   const [activeTab, setActiveTab] = useState('submissions');
   
@@ -188,190 +202,307 @@ export default function AdminPage() {
   const [artworks, setArtworks] = useState<ArtworkRecord[]>([]);
   const [artworksLoading, setArtworksLoading] = useState(false);
   const [artworkSearch, setArtworkSearch] = useState('');
+  const [debouncedArtworkSearch, setDebouncedArtworkSearch] = useState('');
+  const [artworkCharacterFilter, setArtworkCharacterFilter] = useState<string>('all');
   const [assigningArtworkId, setAssigningArtworkId] = useState<string | null>(null);
   const [deletingArtworkId, setDeletingArtworkId] = useState<string | null>(null);
-  const [promotingUrl, setPromotingUrl] = useState<string | null>(null);
-  const [promotingAll, setPromotingAll] = useState(false);
+  const [artworksOffset, setArtworksOffset] = useState(0);
+  const [hasMoreArtworks, setHasMoreArtworks] = useState(true);
+  const [showArtworkPreviews, setShowArtworkPreviews] = useState(true);
+  useEffect(()=>{
+    const t = setTimeout(()=> setDebouncedArtworkSearch(artworkSearch), 250);
+    return ()=> clearTimeout(t);
+  }, [artworkSearch]);
+  // New Artwork (from Artworks tab) dialog state
+  const [showNewArtworkDialog, setShowNewArtworkDialog] = useState(false);
+  const [newArtworkArtistId, setNewArtworkArtistId] = useState<string>('');
+  const [newArtworkCharacterType, setNewArtworkCharacterType] = useState<'killer' | 'survivor'>('killer');
+  const [newArtworkCharacterId, setNewArtworkCharacterId] = useState<string>('');
+  const [newArtworkPlacement, setNewArtworkPlacement] = useState<'gallery' | 'header' | 'legacy_header' | 'background'>('gallery');
+  const [isCreatingArtwork, setIsCreatingArtwork] = useState(false);
+  const [characterImageSearch, setCharacterImageSearch] = useState('');
+  // Storage browser state
+  const [storageArtworks, setStorageArtworks] = useState<StorageItem[]>([]);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageSearch, setStorageSearch] = useState('');
+  const [artworkArtists, setArtworkArtists] = useState<Record<string, string | null>>({});
+  const [updatingArtist, setUpdatingArtist] = useState<string | null>(null);
+
+  // Add artwork dialog state
+  const [addArtworkCharacter, setAddArtworkCharacter] = useState<{ type: 'killer' | 'survivor'; character: any } | null>(null);
+  const [newArtworkUrl, setNewArtworkUrl] = useState('');
+  const [newArtworkFile, setNewArtworkFile] = useState<File | null>(null);
+  const [newArtworkUsageType, setNewArtworkUsageType] = useState<'gallery' | 'header' | 'legacy_header' | 'background'>('gallery');
+  const [newArtworkArtist, setNewArtworkArtist] = useState<string>('none');
+  const [isAddingArtwork, setIsAddingArtwork] = useState(false);
 
   // ---------------- Artworks grouping helpers & child components ----------------
   type MinimalCharacter = { id: string; name: string; artist_urls?: string[] | null; legacy_header_urls?: string[] | null; header_url?: string | null; background_image_url?: string | null; image_url?: string | null; };
 
-  type RawEntry = { url: string; characterType: 'killer' | 'survivor'; characterId: string; fieldName: string; characterName: string };
-
-  interface PromotionSectionProps {
-    killers: MinimalCharacter[];
-    survivors: MinimalCharacter[];
-    artworks: ArtworkRecord[];
-    onPromote: (args: { url: string; characterType: 'killer' | 'survivor'; characterId: string; fieldName: string }) => Promise<void>;
-    onPromoteBatch: (entries: RawEntry[]) => Promise<void>;
-    promotingUrl: string | null;
-    promotingAll: boolean;
+  interface GroupedArtworksProps {
+    killers: any[];
+    survivors: any[];
+    artists: { id: string; name: string }[];
+    onUpdateField: (characterType: 'killer' | 'survivor', characterId: string, fieldName: string, newValue: string | string[] | null) => Promise<void>;
+    onDeleteFromArray: (characterType: 'killer' | 'survivor', characterId: string, fieldName: string, urlToRemove: string) => Promise<void>;
+    showPreviews?: boolean;
+    searchTerm?: string;
   }
 
-  const fieldNames: Array<keyof MinimalCharacter> = ['artist_urls','legacy_header_urls','header_url','background_image_url','image_url'];
+  type GroupKey = string;
+  interface GroupMeta { 
+    label: string; 
+    characterType: 'killer' | 'survivor'; 
+    characterId: string; 
+    characterName: string;
+  }
 
-  const PromotionSection: React.FC<PromotionSectionProps> = ({ killers, survivors, artworks, onPromote, onPromoteBatch, promotingUrl, promotingAll }) => {
-    // Build a Set of existing normalized artwork URLs for quick skip
-    const normalized = new Set(artworks.map(a => a.artwork_url));
-    type RawEntry = { url: string; characterType: 'killer' | 'survivor'; characterId: string; fieldName: string; characterName: string };
-    const raw: RawEntry[] = [];
-    const processChar = (c: MinimalCharacter, characterType: 'killer' | 'survivor') => {
-      fieldNames.forEach(fn => {
-        const v = c[fn];
-        if (!v) return;
-        if (Array.isArray(v)) {
-          v.forEach(u => { if (u && !normalized.has(u)) raw.push({ url: u, characterType, characterId: c.id, fieldName: fn as string, characterName: c.name }); });
-        } else if (typeof v === 'string') {
-          if (v && !normalized.has(v)) raw.push({ url: v, characterType, characterId: c.id, fieldName: fn as string, characterName: c.name });
-        }
-      });
-    };
-    killers.forEach(k => processChar(k,'killer'));
-    survivors.forEach(s => processChar(s,'survivor'));
-    if (!raw.length) return null;
+  interface ImageField {
+    fieldName: string;
+    fieldLabel: string;
+    value: string | string[] | null;
+    isArray: boolean;
+  }
+
+  const extractImageFields = (character: any): ImageField[] => {
+    return [
+      { fieldName: 'header_url', fieldLabel: 'Header Image', value: character.header_url, isArray: false },
+      { fieldName: 'background_image_url', fieldLabel: 'Background Image', value: character.background_image_url, isArray: false },
+      { fieldName: 'artist_urls', fieldLabel: 'Gallery Images', value: character.artist_urls, isArray: true },
+      { fieldName: 'legacy_header_urls', fieldLabel: 'Legacy Headers', value: character.legacy_header_urls, isArray: true },
+      // Exclude image_url as it's the P100 picture
+    ];
+  };
+
+  const GroupedArtworks: React.FC<GroupedArtworksProps> = ({ killers, survivors, artists, onUpdateField, onDeleteFromArray, showPreviews = true, searchTerm = '' }) => {
+    const [displayCount, setDisplayCount] = React.useState(20);
+    
+    const allCharacters = React.useMemo(() => {
+      const chars: Array<{ type: 'killer' | 'survivor'; data: any }> = [];
+      killers.forEach(k => chars.push({ type: 'killer', data: k }));
+      survivors.forEach(s => chars.push({ type: 'survivor', data: s }));
+      return chars
+        .filter(({ data }) => {
+          if (!searchTerm) return true;
+          const hasMatchingName = data.name?.toLowerCase().includes(searchTerm.toLowerCase());
+          const hasMatchingArtist = imageFields(data).some(f => {
+            if (!f.value) return false;
+            const urls = f.isArray ? (f.value as string[]) : [f.value as string];
+            return urls.some(url => {
+              const artistForUrl = artworkArtists[url];
+              return artistForUrl && artistForUrl.toLowerCase().includes(searchTerm.toLowerCase());
+            });
+          });
+          return hasMatchingName || hasMatchingArtist;
+        })
+        .sort((a, b) => (a.data.name || '').localeCompare(b.data.name || ''));
+    }, [killers, survivors, searchTerm, artworkArtists]);
+
+    const displayedCharacters = allCharacters.slice(0, displayCount);
+    
+    const imageFields = (character: any) => extractImageFields(character);
+
+    if (!allCharacters.length) return <div className="text-gray-400 text-sm text-center py-8">No characters found matching "{searchTerm}"</div>;
+
     return (
-      <div className="border border-blue-700 rounded p-4 bg-blue-900/10 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h3 className="text-white font-semibold">Unmatched Links</h3>
-            <p className="text-xs text-gray-400">These image links live only on individual characters right now. Normalize to manage credits centrally.</p>
-          </div>
-          <Button
-            size="sm"
-            className="bg-green-700 hover:bg-green-600"
-            disabled={promotingAll}
-            onClick={() => onPromoteBatch(raw)}
-          >
-            {promotingAll ? 'Normalizing…' : `Add All (${raw.length})`}
-          </Button>
-        </div>
-        <div className="max-h-64 overflow-y-auto divide-y divide-red-800/40">
-          {raw.slice(0,300).map(r => (
-            <div key={r.characterType + r.characterId + r.fieldName + r.url} className="py-2 flex flex-col gap-1">
-              <div className="flex flex-wrap gap-2 items-center text-xs">
-                <span className="px-2 py-0.5 bg-red-800/40 rounded border border-red-700">{r.characterType[0].toUpperCase()}:{r.characterId}</span>
-                <span className="text-gray-300 truncate max-w-[320px]" title={r.url}>{r.url}</span>
-                <span className="text-gray-500">{r.fieldName}</span>
-                <Button size="sm" variant="outline" title="Add this character-only link into the central artworks list" className="h-6 px-2 border-green-600 text-green-300" disabled={promotingAll || promotingUrl===r.url} onClick={() => onPromote({ url: r.url, characterType: r.characterType, characterId: r.characterId, fieldName: r.fieldName })}>{promotingUrl===r.url ? 'Adding...' : 'Add to Artworks'}</Button>
-                <Button size="sm" variant="outline" className="h-6 px-2 border-blue-600 text-blue-300" onClick={() => { navigator.clipboard.writeText(r.url); toast({ title: 'Copied'}); }}>Copy</Button>
+      <div className="space-y-6">
+        {displayedCharacters.map(({ type, data: character }) => {
+          const fields = imageFields(character);
+          const allArtworks: Array<{ url: string; fieldLabel: string; usageType: string; artworkId: string; characterArtworkId: string }> = [];
+          
+          // Use the full artwork data with IDs from _artworks
+          if (character._artworks) {
+            character._artworks.forEach((artwork: any) => {
+              allArtworks.push({
+                url: artwork.artwork_url,
+                fieldLabel: artwork.usage_type,
+                usageType: artwork.usage_type,
+                artworkId: artwork.artwork_id,
+                characterArtworkId: artwork.id, // This is the character_artworks.id for deletion
+              });
+            });
+          }
+          
+          if (!allArtworks.length) return null;
+
+          return (
+            <div key={`${type}-${character.id}`} className="bg-black/40 border border-red-600/20 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-mono text-white">
+                  {character.name}
+                  <span className="text-sm text-gray-400 ml-2">({type})</span>
+                </h2>
+                <Button
+                  onClick={() => setAddArtworkCharacter({ type, character })}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  size="sm"
+                >
+                  + Add Artwork
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {allArtworks.map((artwork, idx) => {
+                  const artistName = artworkArtists[artwork.url];
+                  return (
+                    <div key={idx} className="space-y-2">
+                      {/* Artwork Image */}
+                      {showPreviews && (
+                        <div className="relative aspect-square overflow-hidden rounded-lg bg-black/20 group">
+                          <img
+                            src={artwork.url}
+                            alt={`Artwork by ${artistName || 'Unknown'}`}
+                            className="w-full h-full object-contain transition-transform group-hover:scale-105"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                          {/* Usage Badge */}
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/80 rounded text-xs text-white">
+                            {artwork.usageType}
+                          </div>
+                          {/* Delete Button */}
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Delete this ${artwork.usageType} artwork?`)) return;
+                              
+                              try {
+                                const supabaseAdmin = createAdminClient();
+                                
+                                // Delete from character_artworks (this is the link)
+                                const { error } = await supabaseAdmin
+                                  .from('character_artworks')
+                                  .delete()
+                                  .eq('character_id', character.id)
+                                  .eq('character_type', type)
+                                  .eq('artwork_id', artwork.artworkId);
+                                
+                                if (error) throw error;
+                                
+                                toast({
+                                  title: 'Deleted',
+                                  description: 'Artwork removed successfully'
+                                });
+                                
+                                await fetchAllCharacters();
+                              } catch (err: any) {
+                                console.error('Error deleting artwork:', err);
+                                toast({
+                                  title: 'Error',
+                                  description: 'Failed to delete artwork',
+                                  variant: 'destructive'
+                                });
+                              }
+                            }}
+                            className="absolute top-2 right-2 p-1.5 bg-red-600/80 hover:bg-red-600 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete artwork"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* Artist Dropdown */}
+                      <Select
+                        value={artists.find(a => a.name === artistName)?.id || 'none'}
+                        onValueChange={async (value) => {
+                          setUpdatingArtist(artwork.url);
+                          
+                          try {
+                            const selectedArtist = value !== 'none' ? artists.find(a => a.id === value) : null;
+                            
+                            // Update or create artwork in database
+                            const { error } = await supabase
+                              .from('artworks')
+                              .upsert({
+                                artwork_url: artwork.url,
+                                artist_name: selectedArtist?.name || null,
+                                artist_url: selectedArtist ? (selectedArtist as any).url : null,
+                                platform: selectedArtist ? (selectedArtist as any).platform : null,
+                                updated_at: new Date().toISOString()
+                              }, {
+                                onConflict: 'artwork_url',
+                                ignoreDuplicates: false
+                              });
+                            
+                            if (error) {
+                              console.error('Error updating artwork artist:', error);
+                              toast({ 
+                                title: 'Error', 
+                                description: 'Failed to update artist',
+                                variant: 'destructive'
+                              });
+                              setUpdatingArtist(null);
+                              return;
+                            }
+                            
+                            // Update local state
+                            setArtworkArtists(prev => ({ ...prev, [artwork.url]: selectedArtist?.name || null }));
+                            toast({ 
+                              title: 'Updated', 
+                              description: selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared'
+                            });
+                          } catch (err) {
+                            console.error('Error updating artist:', err);
+                            toast({ 
+                              title: 'Error', 
+                              description: 'Failed to update artist',
+                              variant: 'destructive'
+                            });
+                          } finally {
+                            setUpdatingArtist(null);
+                          }
+                        }}
+                        disabled={updatingArtist === artwork.url}
+                      >
+                        <SelectTrigger className="w-full bg-black/40 border-red-600/20 text-white h-8 text-xs hover:border-red-600/40">
+                          <SelectValue placeholder={updatingArtist === artwork.url ? 'Updating...' : 'Unknown Artist'} />
+                        </SelectTrigger>
+                        <SelectContent className="bg-black border-red-600">
+                          <SelectItem value="none" className="text-white">Unknown Artist</SelectItem>
+                          {artists.map(artist => (
+                            <SelectItem key={artist.id} value={artist.id} className="text-white">
+                              {artist.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      
+                      {/* Artist Link */}
+                      {artistName && (
+                        <div className="text-xs text-blue-400 truncate" title={artistName}>
+                          {artistName}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          ))}
-          {raw.length > 300 && <div className="text-xs text-gray-500 pt-2">Showing first 300 unmatched links… refine by normalizing or editing characters.</div>}
-        </div>
-      </div>
-    );
-  };
-
-  interface GroupedArtworksProps {
-    artworks: ArtworkRecord[];
-    artists: { id: string; name: string }[];
-    assigningArtworkId: string | null;
-    deletingArtworkId: string | null;
-    promotingUrl: string | null; // reserved for potential inline promotion feedback
-    onAssignArtist: (artworkId: string, artistId: string) => Promise<void>;
-    onDelete: (artworkId: string) => Promise<void>;
-  }
-
-  type GroupKey = string; // e.g. killer|trapper|artist_urls OR __unassigned
-  interface GroupMeta { label: string; characterType?: string; characterId?: string; fieldName?: string; }
-
-  const buildGroups = (records: ArtworkRecord[]): Map<GroupKey, { meta: GroupMeta; items: ArtworkRecord[] }> => {
-    const map = new Map<GroupKey, { meta: GroupMeta; items: ArtworkRecord[] }>();
-    const unassigned: ArtworkRecord[] = [];
-    records.forEach(r => {
-      if (!r.usages || !r.usages.length) { unassigned.push(r); return; }
-      // Group by character only (type + id) merging all fields beneath
-      const byCharacterKeys = new Set<string>();
-      r.usages.forEach(u => {
-        const key = `${u.character_type}|${u.character_id}`;
-        if (!map.has(key)) map.set(key, { meta: { label: `${u.character_type === 'killer' ? 'Killer' : 'Survivor'} • ${u.character_id}`, characterType: u.character_type, characterId: u.character_id }, items: [] });
-        if (!byCharacterKeys.has(key)) { // ensure each artwork appears once per character even if multiple fields
-          map.get(key)!.items.push(r);
-          byCharacterKeys.add(key);
-        }
-      });
-    });
-    if (unassigned.length) map.set('__unassigned', { meta: { label: 'Unassigned (no usages)' }, items: unassigned });
-    return map;
-  };
-
-  const GroupedArtworks: React.FC<GroupedArtworksProps> = ({ artworks, artists, assigningArtworkId, deletingArtworkId, onAssignArtist, onDelete }) => {
-    const groups = React.useMemo(() => buildGroups(artworks), [artworks]);
-    if (!artworks.length) return <div className="text-gray-400 text-sm">No artworks found.</div>;
-    return (
-      <div className="space-y-4">
-        {[...groups.entries()].sort((a,b)=> a[0].localeCompare(b[0])).map(([key, group]) => (
-          <div key={key} className="border border-red-700 rounded">
-            <details open className="group">
-              <summary className="cursor-pointer select-none px-4 py-2 flex justify-between items-center bg-red-900/40 hover:bg-red-900/60">
-                <span className="text-white text-sm font-semibold">{group.meta.label} <span className="text-xs text-gray-400">({group.items.length})</span></span>
-              </summary>
-              <div className="p-3 overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-red-600/40">
-                      <TableHead className="text-white w-20">Preview</TableHead>
-                      <TableHead className="text-white min-w-[260px]">URL</TableHead>
-                      <TableHead className="text-white w-48">Artist</TableHead>
-                      <TableHead className="text-white">All Usages</TableHead>
-                      <TableHead className="text-white w-28">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {group.items.map(item => {
-                      const isImg = /\.(png|jpg|jpeg|gif|webp)$/i.test(item.artwork_url);
-                      return (
-                        <TableRow key={item.id} className="border-red-600/10 hover:bg-red-900/20">
-                          <TableCell className="text-white">
-                            {isImg ? <img src={item.artwork_url} alt="art" className="h-14 w-14 object-cover rounded" loading="lazy"/> : <span className="text-xs">N/A</span>}
-                          </TableCell>
-                          <TableCell className="text-white align-top">
-                            <div className="flex flex-col gap-1 max-w-xs">
-                              <span className="truncate" title={item.artwork_url}>{item.artwork_url}</span>
-                              <div className="flex gap-1">
-                                <Button size="sm" variant="outline" className="h-6 px-2 border-blue-600 text-blue-300" onClick={() => { navigator.clipboard.writeText(item.artwork_url); toast({ title: 'Copied'}); }}>Copy</Button>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-white">
-                            <Select value={item.artist_id || '__none'} onValueChange={(val)=> onAssignArtist(item.id, val)}>
-                              <SelectTrigger className="bg-black border-red-600 text-white"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                              <SelectContent className="bg-black border-red-600 max-h-72 overflow-y-auto">
-                                <SelectItem value="__none">(None)</SelectItem>
-                                {artists.map(ar => <SelectItem key={ar.id} value={ar.id}>{ar.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                            {assigningArtworkId === item.id && <span className="text-xs text-gray-400">Saving...</span>}
-                          </TableCell>
-                          <TableCell className="text-white text-xs">
-                            <div className="flex flex-wrap gap-1 max-w-sm">
-                              {item.usages && item.usages.length ? item.usages.map(u => {
-                                const label = `${u.character_type === 'killer' ? 'Killer' : 'Survivor'}:${u.character_id}`;
-                                const fieldLabel = u.field_name === 'artist_urls' ? 'Artist List' : u.field_name === 'legacy_header_urls' ? 'Legacy Header' : u.field_name === 'header_url' ? 'Header' : u.field_name === 'background_image_url' ? 'Background' : u.field_name === 'image_url' ? 'Image' : u.field_name;
-                                return (
-                                  <span key={u.usage_id} className="px-2 py-1 bg-red-700/40 rounded border border-red-800 text-[10px] leading-none flex items-center gap-1" title={`${label} • ${fieldLabel}`}>{label}<span className="opacity-60">/</span>{fieldLabel}</span>
-                                );
-                              }) : <span className="text-gray-500">None</span>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-white">
-                            <Button size="sm" variant="destructive" className="bg-red-700 hover:bg-red-800" disabled={deletingArtworkId===item.id} onClick={() => onDelete(item.id)}>
-                              {deletingArtworkId===item.id ? 'Deleting...' : 'Delete'}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </details>
+          );
+        })}
+        
+        {/* Load More Button */}
+        {displayCount < allCharacters.length && (
+          <div className="text-center py-8">
+            <Button
+              onClick={() => setDisplayCount(prev => prev + 20)}
+              className="bg-red-600 hover:bg-red-700 px-8"
+            >
+              Load More ({allCharacters.length - displayCount} remaining)
+            </Button>
           </div>
-        ))}
+        )}
+        
+        {displayedCharacters.length === 0 && allCharacters.length > 0 && (
+          <div className="text-gray-400 text-center py-8">
+            No characters to display
+          </div>
+        )}
       </div>
     );
   };
+
   const [submissionSort, setSubmissionSort] = useState<'newest' | 'oldest'>('newest');
   const [playerSearchTerm, setPlayerSearchTerm] = useState('');
   const [playerSort, setPlayerSort] = useState<'added_at_desc' | 'added_at_asc' | 'username_asc' | 'username_desc' | 'character_asc' | 'character_desc'>('added_at_desc');
@@ -490,6 +621,13 @@ export default function AdminPage() {
       fetchSubmissions(true);
   }, [submissionSort, filter, statusFilter, isAuthenticated]);
 
+  // Re-fetch artworks when search changes
+  useEffect(() => {
+      if (!isAuthenticated) return;
+      // Client-side filtering is applied via useMemo, but we could extend this
+      // to reset pagination if server-side search is implemented later
+  }, [debouncedArtworkSearch, isAuthenticated]);
+
   // Lockout Timer
   useEffect(() => {
     if (lockoutTimeRemaining > 0) {
@@ -544,6 +682,7 @@ export default function AdminPage() {
       fetchSubmissionStats(),
       fetchCharacters(),
       fetchAllCharacters(),
+      fetchAllArtworks(),
       fetchArtists()
       // Intentionally skipping storage listing here for faster initial paint
     ]);
@@ -581,17 +720,385 @@ export default function AdminPage() {
 
   const fetchAllCharacters = async () => {
     try {
-      const [killersRes, survivorsRes] = await Promise.all([
-        supabase.from('killers').select('*').order('name'),
-        supabase.from('survivors').select('*').order('name')
+      const supabaseAdmin = createAdminClient();
+      const [killersRes, survivorsRes, artworksRes] = await Promise.all([
+        supabase.from('killers').select('id, name, order').order('name'),
+        supabase.from('survivors').select('id, name, order_num').order('name'),
+        supabaseAdmin.from('v_character_artworks').select('*')
       ]);
       if (killersRes.error) throw killersRes.error;
       if (survivorsRes.error) throw survivorsRes.error;
-      setAllKillers(killersRes.data || []);
-      setAllSurvivors(survivorsRes.data || []);
+      
+      // Group artworks by character
+      const artworksByCharacter: Record<string, any[]> = {};
+      (artworksRes.data || []).forEach(artwork => {
+        const key = `${artwork.character_type}-${artwork.character_id}`;
+        if (!artworksByCharacter[key]) {
+          artworksByCharacter[key] = [];
+        }
+        artworksByCharacter[key].push(artwork);
+      });
+      
+      // Add artworks to characters
+      const enrichedKillers = (killersRes.data || []).map(k => {
+        const artworks = artworksByCharacter[`killer-${k.id}`] || [];
+        return {
+          ...k,
+          header_url: artworks.find(a => a.usage_type === 'header')?.artwork_url || null,
+          background_image_url: artworks.find(a => a.usage_type === 'background')?.artwork_url || null,
+          artist_urls: artworks.filter(a => a.usage_type === 'gallery').map(a => a.artwork_url),
+          legacy_header_urls: artworks.filter(a => a.usage_type === 'legacy_header').map(a => a.artwork_url),
+          _artworks: artworks, // Store full artwork data with IDs
+        };
+      });
+      
+      const enrichedSurvivors = (survivorsRes.data || []).map(s => {
+        const artworks = artworksByCharacter[`survivor-${s.id}`] || [];
+        return {
+          ...s,
+          header_url: artworks.find(a => a.usage_type === 'header')?.artwork_url || null,
+          background_image_url: artworks.find(a => a.usage_type === 'background')?.artwork_url || null,
+          artist_urls: artworks.filter(a => a.usage_type === 'gallery').map(a => a.artwork_url),
+          legacy_header_urls: artworks.filter(a => a.usage_type === 'legacy_header').map(a => a.artwork_url),
+          _artworks: artworks, // Store full artwork data with IDs
+        };
+      });
+      
+      setAllKillers(enrichedKillers);
+      setAllSurvivors(enrichedSurvivors);
+      
+      // Build artist map from character artworks view
+      const artistMap: Record<string, string | null> = {};
+      (artworksRes.data || []).forEach(artwork => {
+        if (artwork.artwork_url) {
+          artistMap[artwork.artwork_url] = artwork.artist_name || null;
+        }
+      });
+      setArtworkArtists(artistMap);
     } catch (error) {
       console.error('Error fetching all characters:', error);
       toast({ title: 'Error', description: 'Failed to fetch character management data', variant: 'destructive' });
+    }
+  };
+
+  // Fetch all files from artworks storage bucket
+  const fetchStorageArtworks = async () => {
+    setStorageLoading(true);
+    try {
+      const supabaseAdmin = createAdminClient();
+      const { data, error } = await supabaseAdmin.storage
+        .from('artworks')
+        .list('', {
+          limit: 1000,
+          sortBy: { column: 'created_at', order: 'desc' }
+        });
+
+      if (error) throw error;
+
+      const items: StorageItem[] = (data || []).map(file => {
+        const publicUrl = supabaseAdmin.storage
+          .from('artworks')
+          .getPublicUrl(file.name).data.publicUrl;
+        
+        return {
+          name: file.name,
+          path: file.name,
+          bucket: 'artworks',
+          publicUrl,
+          created_at: file.created_at || '',
+          updated_at: file.updated_at || '',
+          size: file.metadata?.size || 0
+        };
+      });
+
+      setStorageArtworks(items);
+      
+      // Load artist info for each artwork from artworks table
+      const { data: artworksData } = await supabaseAdmin
+        .from('artworks')
+        .select('artwork_url, artist_name');
+      
+      const artistMap: Record<string, string | null> = {};
+      items.forEach(item => {
+        const artwork = artworksData?.find(a => a.artwork_url === item.publicUrl);
+        artistMap[item.publicUrl] = artwork?.artist_name || null;
+      });
+      setArtworkArtists(artistMap);
+    } catch (err: any) {
+      console.error('Failed to fetch storage artworks:', err);
+      toast({ title: 'Error', description: 'Failed to load artworks from storage', variant: 'destructive' });
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
+  // Find where an artwork is used and get current artist from artworks table
+  const findArtworkUsage = async (publicUrl: string): Promise<{ characterType: 'killer' | 'survivor', characterId: string, characterName: string, artistId: string | null, artistName: string | null, fieldType: 'background' | 'header' | 'gallery' | 'legacy_header' | null } | null> => {
+    try {
+      // Get artist from artworks table
+      const supabaseAdmin = createAdminClient();
+      const { data: artworkData } = await supabaseAdmin
+        .from('artworks')
+        .select('artist_name')
+        .eq('artwork_url', publicUrl)
+        .single();
+      
+      const artistName = artworkData?.artist_name || null;
+      const artistId = null; // We no longer use artist_id in this context
+
+      // Check killers first
+      const killer = allKillers.find(k => 
+        k.background_image_url === publicUrl ||
+        k.header_url === publicUrl ||
+        k.artist_urls?.includes(publicUrl) ||
+        k.legacy_header_urls?.includes(publicUrl)
+      );
+      
+      if (killer) {
+        let fieldType: 'background' | 'header' | 'gallery' | 'legacy_header' | null = null;
+        
+        if (killer.background_image_url === publicUrl) {
+          fieldType = 'background';
+        } else if (killer.header_url === publicUrl) {
+          fieldType = 'header';
+        } else if (killer.artist_urls?.includes(publicUrl)) {
+          fieldType = 'gallery';
+        } else if (killer.legacy_header_urls?.includes(publicUrl)) {
+          fieldType = 'legacy_header';
+        }
+        
+        return {
+          characterType: 'killer',
+          characterId: killer.id,
+          characterName: killer.name,
+          artistId,
+          artistName,
+          fieldType
+        };
+      }
+      
+      // Check survivors
+      const survivor = allSurvivors.find(s => 
+        s.background_image_url === publicUrl ||
+        s.header_url === publicUrl ||
+        s.artist_urls?.includes(publicUrl) ||
+        s.legacy_header_urls?.includes(publicUrl)
+      );
+      
+      if (survivor) {
+        let fieldType: 'background' | 'header' | 'gallery' | 'legacy_header' | null = null;
+        
+        if (survivor.background_image_url === publicUrl) {
+          fieldType = 'background';
+        } else if (survivor.header_url === publicUrl) {
+          fieldType = 'header';
+        } else if (survivor.artist_urls?.includes(publicUrl)) {
+          fieldType = 'gallery';
+        } else if (survivor.legacy_header_urls?.includes(publicUrl)) {
+          fieldType = 'legacy_header';
+        }
+        
+        return {
+          characterType: 'survivor',
+          characterId: survivor.id,
+          characterName: survivor.name,
+          artistId,
+          artistName,
+          fieldType
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error finding artwork usage:', error);
+      return null;
+    }
+  };
+
+  // Update artist for an artwork using mapping table
+  const updateArtworkArtist = async (publicUrl: string, artistId: string | null) => {
+    setUpdatingArtist(publicUrl);
+    try {
+      const usage = await findArtworkUsage(publicUrl);
+      if (!usage) {
+        toast({ title: 'Error', description: 'Could not find where this artwork is used', variant: 'destructive' });
+        return;
+      }
+
+      const supabaseAdmin = createAdminClient();
+      
+      // Get artist info
+      let artistName: string | null = null;
+      if (artistId) {
+        const artist = artists.find(a => a.id === artistId);
+        if (artist) {
+          artistName = artist.name ?? null;
+        }
+      }
+
+      // Upsert into mapping table
+      if (artistId) {
+        const { error } = await supabaseAdmin
+          .from('artwork_artist_mappings')
+          .upsert({
+            artwork_url: publicUrl,
+            artist_id: artistId,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'artwork_url'
+          });
+
+        if (error) throw error;
+      } else {
+        // Remove mapping if no artist selected
+        const { error } = await supabaseAdmin
+          .from('artwork_artist_mappings')
+          .delete()
+          .eq('artwork_url', publicUrl);
+
+        if (error && error.code !== 'PGRST116') throw error; // Ignore "not found" errors
+      }
+
+      // Also update background_credit fields if this is a background image
+      if (usage.fieldType === 'background') {
+        const table = usage.characterType === 'killer' ? 'killers' : 'survivors';
+        const artist = artistId ? artists.find(a => a.id === artistId) : null;
+        
+        const { error: bgError } = await supabaseAdmin
+          .from(table)
+          .update({
+            background_credit_name: artist?.name || null,
+            background_credit_url: artist?.url || null
+          })
+          .eq('id', usage.characterId);
+
+        if (bgError) console.error('Error updating background credit:', bgError);
+      }
+
+      toast({ 
+        title: 'Success', 
+        description: `Artist updated for ${usage.characterName} (${usage.fieldType})${artistName ? ` to ${artistName}` : ' (removed)'}` 
+      });
+      
+      // Update local state
+      setArtworkArtists(prev => ({ ...prev, [publicUrl]: artistName }));
+      
+      // Refresh characters if background was updated
+      if (usage.fieldType === 'background') {
+        await fetchAllCharacters();
+      }
+    } catch (error: any) {
+      console.error('Error updating artist:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to update artist', variant: 'destructive' });
+    } finally {
+      setUpdatingArtist(null);
+    }
+  };
+
+  // Delete file from storage and clean up character references
+  const deleteStorageArtwork = async (filePath: string, publicUrl: string) => {
+    if (!confirm(`Delete ${filePath} from storage?\n\nThis will also remove it from all character pages that use it.`)) return;
+    
+    try {
+      const supabaseAdmin = createAdminClient();
+      
+      // Remove from storage
+      const { error: storageError } = await supabaseAdmin.storage
+        .from('artworks')
+        .remove([filePath]);
+      
+      if (storageError) throw storageError;
+
+      // Remove from all character records that reference this URL
+      // Check killers
+      const { data: killers } = await supabaseAdmin
+        .from('killers')
+        .select('id, artist_urls, legacy_header_urls, header_url, background_image_url');
+
+      for (const killer of killers || []) {
+        let needsUpdate = false;
+        const updates: any = {};
+
+        // Check and update artist_urls array
+        if (killer.artist_urls && Array.isArray(killer.artist_urls)) {
+          const filtered = killer.artist_urls.filter((url: string) => url !== publicUrl);
+          if (filtered.length !== killer.artist_urls.length) {
+            updates.artist_urls = filtered;
+            needsUpdate = true;
+          }
+        }
+
+        // Check and update legacy_header_urls array
+        if (killer.legacy_header_urls && Array.isArray(killer.legacy_header_urls)) {
+          const filtered = killer.legacy_header_urls.filter((url: string) => url !== publicUrl);
+          if (filtered.length !== killer.legacy_header_urls.length) {
+            updates.legacy_header_urls = filtered;
+            needsUpdate = true;
+          }
+        }
+
+        // Check single-value fields
+        if (killer.header_url === publicUrl) {
+          updates.header_url = null;
+          needsUpdate = true;
+        }
+        if (killer.background_image_url === publicUrl) {
+          updates.background_image_url = null;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          await supabaseAdmin.from('killers').update(updates).eq('id', killer.id);
+        }
+      }
+
+      // Check survivors
+      const { data: survivors } = await supabaseAdmin
+        .from('survivors')
+        .select('id, artist_urls, legacy_header_urls, header_url, background_image_url');
+
+      for (const survivor of survivors || []) {
+        let needsUpdate = false;
+        const updates: any = {};
+
+        if (survivor.artist_urls && Array.isArray(survivor.artist_urls)) {
+          const filtered = survivor.artist_urls.filter((url: string) => url !== publicUrl);
+          if (filtered.length !== survivor.artist_urls.length) {
+            updates.artist_urls = filtered;
+            needsUpdate = true;
+          }
+        }
+
+        if (survivor.legacy_header_urls && Array.isArray(survivor.legacy_header_urls)) {
+          const filtered = survivor.legacy_header_urls.filter((url: string) => url !== publicUrl);
+          if (filtered.length !== survivor.legacy_header_urls.length) {
+            updates.legacy_header_urls = filtered;
+            needsUpdate = true;
+          }
+        }
+
+        if (survivor.header_url === publicUrl) {
+          updates.header_url = null;
+          needsUpdate = true;
+        }
+        if (survivor.background_image_url === publicUrl) {
+          updates.background_image_url = null;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          await supabaseAdmin.from('survivors').update(updates).eq('id', survivor.id);
+        }
+      }
+
+      toast({ title: 'Success', description: 'Artwork deleted from storage and all character pages' });
+      
+      // Refresh data
+      await fetchStorageArtworks();
+      await fetchAllCharacters();
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      toast({ title: 'Error', description: err.message || 'Failed to delete artwork', variant: 'destructive' });
     }
   };
 
@@ -720,31 +1227,96 @@ export default function AdminPage() {
     }
   };
 
-  // Fetch artworks in pages to improve initial load & scrolling performance
+  // Fetch first page of artworks (deprecated - now using character-based approach)
   const fetchAllArtworks = useCallback(async () => {
-    if (artworksLoading) return;
+    // Artworks are now managed through characters, not a separate artworks table
+    setArtworks([]);
+    setArtworksOffset(0);
+    setHasMoreArtworks(false);
+  }, []);
+
+  // Load more artworks (deprecated - now using character-based approach)
+  const loadMoreArtworks = useCallback(async () => {
+    // Artworks are now managed through characters, not a separate artworks table
+    setHasMoreArtworks(false);
+  }, []);
+
+  // Fetch blacklisted users
+  const fetchBlacklistedUsers = useCallback(async () => {
     try {
-      setArtworksLoading(true);
-      const allRecords: ArtworkRecord[] = [];
-      let offset = 0;
-
-      while (true) {
-        const batch = await fetchArtworks(offset, ARTWORKS_PAGE_SIZE);
-        if (!batch.length) break;
-
-        allRecords.push(...batch);
-        if (batch.length < ARTWORKS_PAGE_SIZE) break;
-        offset += batch.length;
-      }
-
-      setArtworks(allRecords);
+      const supabase = createAdminClient();
+      const { data, error } = await supabase
+        .from('blacklisted_users')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setBlacklistedUsers(data || []);
     } catch (e: any) {
-      console.error('Error fetching artworks', e);
-      toast({ title: 'Error', description: 'Failed to fetch artworks', variant: 'destructive' });
-    } finally {
-      setArtworksLoading(false);
+      console.error('Error fetching blacklisted users', e);
+      toast({ title: 'Error', description: 'Failed to fetch blacklist', variant: 'destructive' });
     }
-  }, [artworksLoading, toast]);
+  }, [toast]);
+
+  // Add user to blacklist
+  const addToBlacklist = useCallback(async () => {
+    if (!newBlacklistUsername.trim()) {
+      toast({ title: 'Error', description: 'Username is required', variant: 'destructive' });
+      return;
+    }
+    
+    setIsAddingToBlacklist(true);
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from('blacklisted_users')
+        .insert([{
+          username: newBlacklistUsername.trim().toLowerCase(),
+          reason: newBlacklistReason.trim() || null,
+          created_by: 'admin'
+        }]);
+      
+      if (error) {
+        if (error.code === '23505') { // Unique constraint violation
+          toast({ title: 'Error', description: 'User is already blacklisted', variant: 'destructive' });
+        } else {
+          throw error;
+        }
+        return;
+      }
+      
+      toast({ title: 'Success', description: 'User added to blacklist' });
+      setNewBlacklistUsername('');
+      setNewBlacklistReason('');
+      await fetchBlacklistedUsers();
+    } catch (e: any) {
+      console.error('Error adding to blacklist', e);
+      toast({ title: 'Error', description: 'Failed to add user to blacklist', variant: 'destructive' });
+    } finally {
+      setIsAddingToBlacklist(false);
+    }
+  }, [newBlacklistUsername, newBlacklistReason, toast, fetchBlacklistedUsers]);
+
+  // Remove user from blacklist
+  const removeFromBlacklist = useCallback(async (id: string, username: string) => {
+    if (!confirm(`Remove ${username} from blacklist?`)) return;
+    
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from('blacklisted_users')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      toast({ title: 'Success', description: 'User removed from blacklist' });
+      await fetchBlacklistedUsers();
+    } catch (e: any) {
+      console.error('Error removing from blacklist', e);
+      toast({ title: 'Error', description: 'Failed to remove user from blacklist', variant: 'destructive' });
+    }
+  }, [toast, fetchBlacklistedUsers]);
 
 
   const fetchStorageItems = async (bucket: string) => {
@@ -800,11 +1372,10 @@ export default function AdminPage() {
     }
   };
 
+  // Deprecated: artworks are now managed through characters
   const filteredArtworks = useMemo(() => {
-    const term = artworkSearch.trim().toLowerCase();
-    if (!term) return artworks;
-    return artworks.filter(art => art.artwork_url.toLowerCase().includes(term));
-  }, [artworks, artworkSearch]);
+    return [];
+  }, []);
 
   const refreshArtworks = useCallback(() => { void fetchAllArtworks(); }, [fetchAllArtworks]);
 
@@ -1665,6 +2236,7 @@ export default function AdminPage() {
             <TabsTrigger value="artists-table" className="data-[state=active]:bg-red-600">Artists</TabsTrigger>
             <TabsTrigger value="storage-manager" className="data-[state=active]:bg-red-600" onClick={() => { if(!storageItems.length) fetchStorageItems(selectedBucket); }}>Storage</TabsTrigger>
             <TabsTrigger value="artworks" className="data-[state=active]:bg-red-600" onClick={() => { if(!artworks.length) refreshArtworks(); }}>Artworks</TabsTrigger>
+            <TabsTrigger value="blacklist" className="data-[state=active]:bg-red-600" onClick={() => { if(!blacklistedUsers.length) fetchBlacklistedUsers(); }}>Blacklist</TabsTrigger>
           </TabsList>
 
           <TabsContent value="submissions" className="space-y-6">
@@ -1813,7 +2385,8 @@ export default function AdminPage() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <span>{submission.username}</span>
+                              {/* Decode legacy stored HTML entities (&lt; &gt;) so hearts like <3 render properly */}
+                              <span>{submission.username.replace(/&lt;/g, '<').replace(/&gt;/g, '>')}</span>
                               {submission.status === 'pending' && (
                                 <Button size="icon" variant="outline" className="h-6 w-6 border-blue-600 text-blue-400" onClick={() => { setEditingSubmissionUsername(submission.id); setEditingSubmissionValue(submission.username); }}>
                                   <Pencil size={12} />
@@ -2421,93 +2994,203 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ARTWORKS TAB (moved inside <Tabs>) */}
+          {/* ARTWORKS TAB - Character Images Manager */}
           <TabsContent value="artworks" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6 space-y-6">
-              <div className="flex flex-wrap gap-4 items-end">
-                <div>
-                  <Label className="text-white">Search (URL contains)</Label>
-                  <Input value={artworkSearch} onChange={(e)=>setArtworkSearch(e.target.value)} placeholder="Filter by URL" className="bg-black border-red-600 text-white w-64" />
+              {/* Search and Controls */}
+              <div className="sticky top-0 z-10 bg-black/90 backdrop-blur-sm p-4 border border-red-600/20 rounded-lg">
+                <div className="flex flex-wrap gap-4 items-center">
+                  <div className="flex-1 min-w-[200px]">
+                    <Input 
+                      value={characterImageSearch} 
+                      onChange={(e) => setCharacterImageSearch(e.target.value)} 
+                      placeholder="Search by character or artist name..." 
+                      className="bg-black/40 border-red-600/20 text-white" 
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      id="toggle-previews" 
+                      type="checkbox" 
+                      className="accent-red-600" 
+                      checked={showArtworkPreviews} 
+                      onChange={(e)=> setShowArtworkPreviews(e.target.checked)} 
+                    />
+                    <Label htmlFor="toggle-previews" className="text-white text-sm">Show thumbnails</Label>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    className="border-blue-600 text-blue-300 hover:bg-blue-600/20" 
+                    onClick={() => fetchAllCharacters()} 
+                    disabled={artworksLoading}
+                  >
+                    Refresh
+                  </Button>
+                  <div className="text-xs text-gray-400">
+                    Character artwork management
+                  </div>
                 </div>
-                <Button variant="outline" className="border-blue-600 text-blue-300" onClick={refreshArtworks} disabled={artworksLoading}>Refresh</Button>
-                <div className="text-xs text-gray-400">Loaded: {artworks.length}</div>
               </div>
-              {artworksLoading && <div className="text-white">Loading artworks...</div>}
 
-              {/* PROMOTION SECTION: raw artist / legacy URLs not yet normalized */}
-              <PromotionSection
-                killers={allKillers}
-                survivors={allSurvivors}
-                artworks={artworks}
-                promotingUrl={promotingUrl}
-                promotingAll={promotingAll}
-                onPromote={async ({ url, characterType, characterId, fieldName }) => {
-                  try {
-                    setPromotingUrl(url);
-                    await upsertArtworkAndUsage({ url, characterType, characterId, fieldName });
-                    toast({ title: 'Promoted', description: 'Artwork normalized.' });
-                    await fetchAllArtworks();
-                  } catch(e:any) {
-                    console.error(e);
-                    toast({ title: 'Error', description: 'Failed to promote', variant: 'destructive'});
-                  } finally {
-                    setPromotingUrl(null);
-                  }
-                }}
-                onPromoteBatch={async (entries) => {
-                  if (!entries.length) return;
-                  try {
-                    setPromotingAll(true);
-                    let successCount = 0;
-                    for (const entry of entries) {
-                      try {
-                        await upsertArtworkAndUsage({ url: entry.url, characterType: entry.characterType, characterId: entry.characterId, fieldName: entry.fieldName });
-                        successCount += 1;
-                      } catch (err) {
-                        console.error('Failed to normalize artwork', entry, err);
-                      }
-                    }
-                    toast({ title: 'Normalization complete', description: `Processed ${successCount} of ${entries.length} links.` });
-                    await fetchAllArtworks();
-                  } catch (batchErr) {
-                    console.error(batchErr);
-                    toast({ title: 'Error', description: 'Bulk normalization failed.', variant: 'destructive' });
-                  } finally {
-                    setPromotingAll(false);
-                    setPromotingUrl(null);
-                  }
-                }}
-              />
+              {artworksLoading && <div className="text-white text-center py-8">Loading...</div>}
 
               <GroupedArtworks
-                artworks={filteredArtworks}
+                killers={allKillers}
+                survivors={allSurvivors}
                 artists={artists}
-                assigningArtworkId={assigningArtworkId}
-                deletingArtworkId={deletingArtworkId}
-                promotingUrl={promotingUrl}
-                onAssignArtist={async (artworkId, artistId) => {
+                showPreviews={showArtworkPreviews}
+                searchTerm={characterImageSearch}
+                onUpdateField={async (characterType, characterId, fieldName, newValue) => {
                   try {
-                    setAssigningArtworkId(artworkId);
-                    await updateArtworkArtist(artworkId, artistId === '__none' ? null : artistId);
-                    await fetchAllArtworks();
-                    toast({ title: 'Updated'});
-                  } catch(e:any){
-                    console.error(e); toast({ title: 'Error', description: 'Cannot update', variant: 'destructive'});
-                  } finally { setAssigningArtworkId(null);} 
-                }}
-                onDelete={async (artworkId) => {
-                  if(!confirm('Delete this artwork?')) return;
-                  try {
-                    setDeletingArtworkId(artworkId);
-                    await deleteArtwork(artworkId);
-                    await fetchAllArtworks();
-                    toast({ title: 'Deleted'});
-                  } catch(e:any){
+                    const supabaseAdmin = createAdminClient();
+                    const tableName = characterType === 'killer' ? 'killers' : 'survivors';
+                    const { error } = await supabaseAdmin
+                      .from(tableName)
+                      .update({ [fieldName]: newValue })
+                      .eq('id', characterId);
+                    
+                    if (error) throw error;
+                    
+                    toast({ title: 'Updated', description: 'Image field updated successfully' });
+                    await fetchAllCharacters();
+                  } catch (e: any) {
                     console.error(e);
-                    toast({ title: 'Error', description: 'Delete failed', variant: 'destructive'});
-                  } finally { setDeletingArtworkId(null);} 
+                    toast({ title: 'Error', description: 'Failed to update field', variant: 'destructive' });
+                  }
+                }}
+                onDeleteFromArray={async (characterType, characterId, fieldName, urlToRemove) => {
+                  if (!confirm('Remove this image?')) return;
+                  try {
+                    const supabaseAdmin = createAdminClient();
+                    const tableName = characterType === 'killer' ? 'killers' : 'survivors';
+                    
+                    // Get current character data
+                    const { data: character, error: fetchError } = await supabaseAdmin
+                      .from(tableName)
+                      .select(fieldName)
+                      .eq('id', characterId)
+                      .single();
+                    
+                    if (fetchError) throw fetchError;
+                    
+                    const currentArray = ((character as any)[fieldName] as string[]) || [];
+                    const newArray = currentArray.filter(url => url !== urlToRemove);
+                    
+                    const { error } = await supabaseAdmin
+                      .from(tableName)
+                      .update({ [fieldName]: newArray })
+                      .eq('id', characterId);
+                    
+                    if (error) throw error;
+                    
+                    toast({ title: 'Removed', description: 'Image removed successfully' });
+                    await fetchAllCharacters();
+                  } catch (e: any) {
+                    console.error(e);
+                    toast({ title: 'Error', description: 'Failed to remove image', variant: 'destructive' });
+                  }
                 }}
               />
+            </div>
+          </TabsContent>
+
+          {/* Blacklist Tab */}
+          <TabsContent value="blacklist" className="space-y-6">
+            <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
+              <h2 className="text-2xl font-bold text-white mb-6">User Blacklist</h2>
+              
+              {/* Add to Blacklist */}
+              <div className="bg-red-900/20 border border-red-600 rounded-lg p-4 mb-6">
+                <h3 className="text-white font-semibold mb-3">Add User to Blacklist</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-white">Username</Label>
+                    <Input
+                      value={newBlacklistUsername}
+                      onChange={(e) => setNewBlacklistUsername(e.target.value)}
+                      placeholder="Enter username"
+                      className="bg-black border-red-600 text-white mt-1"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label className="text-white">Reason (Optional)</Label>
+                    <Input
+                      value={newBlacklistReason}
+                      onChange={(e) => setNewBlacklistReason(e.target.value)}
+                      placeholder="e.g., Farming, Spam, etc."
+                      className="bg-black border-red-600 text-white mt-1"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end mt-3">
+                  <Button
+                    onClick={addToBlacklist}
+                    disabled={isAddingToBlacklist || !newBlacklistUsername.trim()}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    {isAddingToBlacklist ? 'Adding...' : 'Add to Blacklist'}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Search */}
+              <div className="mb-4">
+                <Input
+                  value={blacklistSearch}
+                  onChange={(e) => setBlacklistSearch(e.target.value)}
+                  placeholder="Search blacklisted users..."
+                  className="bg-black border-red-600 text-white"
+                />
+              </div>
+
+              {/* Blacklist Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-red-600">
+                      <th className="text-left text-white p-3">Username</th>
+                      <th className="text-left text-white p-3">Reason</th>
+                      <th className="text-left text-white p-3">Added</th>
+                      <th className="text-left text-white p-3">Added By</th>
+                      <th className="text-right text-white p-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {blacklistedUsers
+                      .filter((user) =>
+                        blacklistSearch
+                          ? user.username.toLowerCase().includes(blacklistSearch.toLowerCase()) ||
+                            (user.reason && user.reason.toLowerCase().includes(blacklistSearch.toLowerCase()))
+                          : true
+                      )
+                      .map((user) => (
+                        <tr key={user.id} className="border-b border-red-600/30">
+                          <td className="text-white p-3 font-mono">{user.username}</td>
+                          <td className="text-gray-300 p-3">{user.reason || '-'}</td>
+                          <td className="text-gray-400 p-3 text-sm">
+                            {new Date(user.created_at).toLocaleString()}
+                          </td>
+                          <td className="text-gray-400 p-3 text-sm">{user.created_by || '-'}</td>
+                          <td className="text-right p-3">
+                            <Button
+                              onClick={() => removeFromBlacklist(user.id, user.username)}
+                              variant="outline"
+                              size="sm"
+                              className="border-red-600 text-red-400 hover:bg-red-600 hover:text-white"
+                            >
+                              Remove
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {blacklistedUsers.length === 0 && (
+                  <div className="text-center text-gray-400 py-8">
+                    No blacklisted users yet.
+                  </div>
+                )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>
@@ -2750,6 +3433,347 @@ export default function AdminPage() {
                     </div>
                 </DialogContent>
             </Dialog>
+        )}
+        {showNewArtworkDialog && (
+          <Dialog open={showNewArtworkDialog} onOpenChange={() => { if(!isCreatingArtwork) { setShowNewArtworkDialog(false); } }}>
+            <DialogContent className="bg-black border-red-600 max-w-xl">
+              <DialogHeader>
+                <DialogTitle className="text-white">Add New Artwork</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-white">Artwork File *</Label>
+                  <input type="file" accept="image/*" onChange={(e)=> setNewArtworkFile(e.target.files?.[0] || null)} className="mt-1 text-white" />
+                  {newArtworkFile && <p className="text-xs text-gray-400 mt-1">Selected: {newArtworkFile.name}</p>}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-white">Artist</Label>
+                    <Select value={newArtworkArtistId || '__none'} onValueChange={(v)=> setNewArtworkArtistId(v === '__none' ? '' : v)}>
+                      <SelectTrigger className="bg-black border-red-600 text-white mt-1"><SelectValue placeholder="(None)" /></SelectTrigger>
+                      <SelectContent className="bg-black border-red-600 max-h-72 overflow-y-auto">
+                        <SelectItem value="__none">(None)</SelectItem>
+                        {artists.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-white">Character Type</Label>
+                    <Select value={newArtworkCharacterType} onValueChange={(v)=> { setNewArtworkCharacterType(v as 'killer'|'survivor'); setNewArtworkCharacterId(''); }}>
+                      <SelectTrigger className="bg-black border-red-600 text-white mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-black border-red-600">
+                        <SelectItem value="killer">Killer</SelectItem>
+                        <SelectItem value="survivor">Survivor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-white">Character *</Label>
+                  <Select value={newArtworkCharacterId} onValueChange={setNewArtworkCharacterId}>
+                    <SelectTrigger className="bg-black border-red-600 text-white mt-1"><SelectValue placeholder="Select character" /></SelectTrigger>
+                    <SelectContent className="bg-black border-red-600 max-h-72 overflow-y-auto">
+                      {(newArtworkCharacterType === 'killer' ? allKillers : allSurvivors).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-white">Placement *</Label>
+                  <Select value={newArtworkPlacement} onValueChange={(v)=> setNewArtworkPlacement(v as any)}>
+                    <SelectTrigger className="bg-black border-red-600 text-white mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-black border-red-600">
+                      <SelectItem value="gallery">Gallery (artist_urls)</SelectItem>
+                      <SelectItem value="header">Header (header_url)</SelectItem>
+                      <SelectItem value="legacy_header">Legacy Header (legacy_header_urls)</SelectItem>
+                      <SelectItem value="background">Background (background_image_url)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" className="border-red-600 text-white" disabled={isCreatingArtwork} onClick={()=> {
+                    setShowNewArtworkDialog(false);
+                    setNewArtworkFile(null);
+                    setNewArtworkCharacterId('');
+                    setNewArtworkPlacement('gallery');
+                  }}>Cancel</Button>
+                  <Button className="bg-green-600 hover:bg-green-700" disabled={isCreatingArtwork || !newArtworkFile || !newArtworkCharacterId} onClick={async ()=> {
+                    setIsCreatingArtwork(true);
+                    try {
+                      const supabaseAdmin = createAdminClient();
+                      const tableName = newArtworkCharacterType === 'killer' ? 'killers' : 'survivors';
+                      const { data: character, error: fetchErr } = await supabaseAdmin.from(tableName).select('*').eq('id', newArtworkCharacterId).single();
+                      if (fetchErr) throw fetchErr;
+                      // Confirm overwrite for single-value placements
+                      if ((newArtworkPlacement === 'header' && character.header_url) || (newArtworkPlacement === 'background' && character.background_image_url)) {
+                        const proceed = confirm(`This will replace the existing ${newArtworkPlacement} image. Continue?`);
+                        if(!proceed) { setIsCreatingArtwork(false); return; }
+                      }
+                      const timestamp = Date.now();
+                      const ext = newArtworkFile!.name.split('.').pop();
+                      const fileName = `${newArtworkCharacterId}-${timestamp}.${ext}`;
+                      const publicUrl = await uploadImageToStorage(newArtworkFile!, 'artworks', fileName);
+                      // Update character field
+                      let updatePayload: any = {};
+                      if (newArtworkPlacement === 'gallery') {
+                        const arr = character.artist_urls || [];
+                        updatePayload.artist_urls = [...arr, publicUrl];
+                      } else if (newArtworkPlacement === 'legacy_header') {
+                        const arr = character.legacy_header_urls || [];
+                        updatePayload.legacy_header_urls = [...arr, publicUrl];
+                      } else if (newArtworkPlacement === 'header') {
+                        updatePayload.header_url = publicUrl;
+                      } else if (newArtworkPlacement === 'background') {
+                        updatePayload.background_image_url = publicUrl;
+                      }
+                      if (Object.keys(updatePayload).length) {
+                        const { error: updErr } = await supabaseAdmin.from(tableName).update(updatePayload).eq('id', newArtworkCharacterId);
+                        if (updErr) throw updErr;
+                      }
+                      toast({ title: 'Success', description: 'Artwork added successfully!' });
+                      // Reset and close
+                      setNewArtworkFile(null);
+                      setNewArtworkCharacterId('');
+                      setNewArtworkPlacement('gallery');
+                      setShowNewArtworkDialog(false);
+                      await fetchAllCharacters();
+                    } catch(err:any) {
+                      console.error(err);
+                      toast({ title: 'Error', description: err.message || 'Failed to add artwork', variant: 'destructive'});
+                    } finally { setIsCreatingArtwork(false); }
+                  }}>{isCreatingArtwork ? 'Uploading...' : 'Add Artwork'}</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+        
+        {/* Add Artwork to Character Dialog */}
+        {addArtworkCharacter && (
+          <Dialog open={!!addArtworkCharacter} onOpenChange={() => {
+            if (!isAddingArtwork) {
+              setAddArtworkCharacter(null);
+              setNewArtworkUrl('');
+              setNewArtworkUsageType('gallery');
+              setNewArtworkArtist('none');
+            }
+          }}>
+            <DialogContent className="bg-black border-red-600 max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-white">
+                  Add Artwork to {addArtworkCharacter.character.name}
+                </DialogTitle>
+                <p className="text-gray-400 text-sm">
+                  {addArtworkCharacter.type === 'killer' ? 'Killer' : 'Survivor'}
+                </p>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-white">Upload Method *</Label>
+                  <p className="text-xs text-gray-400 mb-2">Choose to upload a file or provide a URL</p>
+                </div>
+                
+                <div>
+                  <Label className="text-white">Upload File</Label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      setNewArtworkFile(e.target.files?.[0] || null);
+                      if (e.target.files?.[0]) {
+                        setNewArtworkUrl(''); // Clear URL if file is selected
+                      }
+                    }}
+                    className="mt-1 text-white w-full"
+                  />
+                  {newArtworkFile && (
+                    <p className="text-xs text-green-400 mt-1">
+                      Selected: {newArtworkFile.name}
+                    </p>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 border-t border-gray-600"></div>
+                  <span className="text-gray-400 text-sm">OR</span>
+                  <div className="flex-1 border-t border-gray-600"></div>
+                </div>
+                
+                <div>
+                  <Label className="text-white">Artwork URL</Label>
+                  <Input
+                    value={newArtworkUrl}
+                    onChange={(e) => {
+                      setNewArtworkUrl(e.target.value);
+                      if (e.target.value.trim()) {
+                        setNewArtworkFile(null); // Clear file if URL is entered
+                      }
+                    }}
+                    placeholder="https://..."
+                    className="bg-black border-red-600 text-white mt-1"
+                    disabled={!!newArtworkFile}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Enter the full URL of the artwork image
+                  </p>
+                </div>
+                
+                <div>
+                  <Label className="text-white">Usage Type *</Label>
+                  <Select value={newArtworkUsageType} onValueChange={(v) => setNewArtworkUsageType(v as any)}>
+                    <SelectTrigger className="bg-black border-red-600 text-white mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black border-red-600">
+                      <SelectItem value="gallery">Gallery</SelectItem>
+                      <SelectItem value="header">Header</SelectItem>
+                      <SelectItem value="legacy_header">Legacy Header</SelectItem>
+                      <SelectItem value="background">Background</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label className="text-white">Artist</Label>
+                  <Select value={newArtworkArtist} onValueChange={setNewArtworkArtist}>
+                    <SelectTrigger className="bg-black border-red-600 text-white mt-1">
+                      <SelectValue placeholder="Select artist (optional)" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-black border-red-600 max-h-72 overflow-y-auto">
+                      <SelectItem value="none">Unknown Artist</SelectItem>
+                      {artists.map(artist => (
+                        <SelectItem key={artist.id} value={artist.id}>
+                          {artist.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    className="border-red-600 text-white"
+                    onClick={() => {
+                      setAddArtworkCharacter(null);
+                      setNewArtworkUrl('');
+                      setNewArtworkFile(null);
+                      setNewArtworkUsageType('gallery');
+                      setNewArtworkArtist('none');
+                    }}
+                    disabled={isAddingArtwork}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={isAddingArtwork || (!newArtworkUrl.trim() && !newArtworkFile)}
+                    onClick={async () => {
+                      setIsAddingArtwork(true);
+                      try {
+                        const supabaseAdmin = createAdminClient();
+                        const selectedArtist = newArtworkArtist !== 'none' ? artists.find(a => a.id === newArtworkArtist) : null;
+                        
+                        let artworkUrl = newArtworkUrl.trim();
+                        
+                        // If file is selected, upload it first
+                        if (newArtworkFile) {
+                          const timestamp = Date.now();
+                          const fileExt = newArtworkFile.name.split('.').pop();
+                          const characterFolder = addArtworkCharacter.character.id;
+                          const artistSuffix = selectedArtist ? `-by-${selectedArtist.name.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+                          const fileName = `${characterFolder}/${characterFolder}-${timestamp}${artistSuffix}.${fileExt}`;
+                          
+                          const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+                            .from('artworks')
+                            .upload(fileName, newArtworkFile, {
+                              cacheControl: '3600',
+                              upsert: false
+                            });
+                          
+                          if (uploadError) throw uploadError;
+                          
+                          const { data: { publicUrl } } = supabaseAdmin.storage
+                            .from('artworks')
+                            .getPublicUrl(fileName);
+                          
+                          artworkUrl = publicUrl;
+                        }
+                        
+                        if (!artworkUrl) {
+                          throw new Error('No artwork URL or file provided');
+                        }
+                        
+                        // 1. Upsert into artworks table
+                        const { data: artworkData, error: artworkError } = await supabaseAdmin
+                          .from('artworks')
+                          .upsert({
+                            artwork_url: artworkUrl,
+                            artist_name: selectedArtist?.name || null,
+                            artist_url: selectedArtist ? (selectedArtist as any).url : null,
+                            platform: selectedArtist ? (selectedArtist as any).platform : null,
+                            updated_at: new Date().toISOString()
+                          }, {
+                            onConflict: 'artwork_url',
+                            ignoreDuplicates: false
+                          })
+                          .select()
+                          .single();
+                        
+                        if (artworkError) throw artworkError;
+                        
+                        // 2. Create character_artworks link
+                        const { error: linkError } = await supabaseAdmin
+                          .from('character_artworks')
+                          .insert({
+                            character_id: addArtworkCharacter.character.id,
+                            character_type: addArtworkCharacter.type,
+                            artwork_id: artworkData.id,
+                            usage_type: newArtworkUsageType
+                          });
+                        
+                        if (linkError) {
+                          // Check if it's a duplicate error
+                          if (linkError.code === '23505') {
+                            toast({
+                              title: 'Already exists',
+                              description: 'This artwork is already linked to this character',
+                              variant: 'destructive'
+                            });
+                          } else {
+                            throw linkError;
+                          }
+                        } else {
+                          toast({
+                            title: 'Success',
+                            description: 'Artwork added successfully!'
+                          });
+                        }
+                        
+                        // Reset and close
+                        setAddArtworkCharacter(null);
+                        setNewArtworkUrl('');
+                        setNewArtworkFile(null);
+                        setNewArtworkUsageType('gallery');
+                        setNewArtworkArtist('none');
+                        await fetchAllCharacters();
+                      } catch (err: any) {
+                        console.error('Error adding artwork:', err);
+                        toast({
+                          title: 'Error',
+                          description: err.message || 'Failed to add artwork',
+                          variant: 'destructive'
+                        });
+                      } finally {
+                        setIsAddingArtwork(false);
+                      }
+                    }}
+                  >
+                    {isAddingArtwork ? 'Adding...' : 'Add Artwork'}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
     </BackgroundWrapper>

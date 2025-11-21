@@ -9,6 +9,9 @@ import Link from 'next/link';
 import { FaDiscord } from 'react-icons/fa';
 import { User } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
 import DOMPurify from 'dompurify';
 
 // Safe sanitization for comments - allows emojis, symbols, but prevents XSS
@@ -91,6 +94,7 @@ function CustomDropdown({ characters, value, onChange, placeholder }: CustomDrop
 }
 
 export default function SubmissionPage() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     username: '',
     characterType: 'killer' as 'killer' | 'survivor',
@@ -100,6 +104,7 @@ export default function SubmissionPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -182,75 +187,70 @@ export default function SubmissionPage() {
     setIsSubmitting(true);
     setMessage('');
     try {
+      // Check if user is blacklisted
+      const { data: blacklistData, error: blacklistError } = await supabase
+        .from('blacklisted_users')
+        .select('username')
+        .eq('username', sanitizedUsername.toLowerCase())
+        .single();
+      
+      if (blacklistData) {
+        setMessage('Unable to submit. Please contact support.');
+        setIsSubmitting(false);
+        return;
+      }
+      
       // Step 1: Determine character identifiers for lookup
       const targetKillerId = formData.characterType === 'killer' ? formData.characterId : null;
       const targetSurvivorId = formData.characterType === 'survivor' ? formData.characterId : null;
 
-      // Step 2: Check for existing pending OR approved submissions for this character.
-      // We exclude legacy=true in case legacy rows shouldn't block (adjust if legacy should block by removing filter).
-      // NOTE: This is a client-side safeguard; for true integrity add a DB unique partial index (see comments below).
-      let duplicateQuery = supabase
+      // Step 2: Check for existing approved submissions for this character.
+      // If approved exists, block the submission (cannot override an already approved P100).
+      let approvedQuery = supabase
         .from('p100_submissions')
         .select('id, status, killer_id, survivor_id, username, legacy')
-        .in('status', ['pending', 'approved'])
+        .eq('status', 'approved')
         .eq('legacy', false)
         .eq('username', sanitizedUsername);
 
       if (targetKillerId) {
-        duplicateQuery = duplicateQuery.eq('killer_id', targetKillerId);
+        approvedQuery = approvedQuery.eq('killer_id', targetKillerId);
       } else if (targetSurvivorId) {
-        duplicateQuery = duplicateQuery.eq('survivor_id', targetSurvivorId);
+        approvedQuery = approvedQuery.eq('survivor_id', targetSurvivorId);
       }
 
-      const { data: dupData, error: dupError } = await duplicateQuery.limit(1);
-      if (dupError) {
-        console.warn('Duplicate check failed (continuing to allow submission):', dupError.message);
+      const { data: approvedData, error: approvedError } = await approvedQuery.limit(1);
+      if (approvedError) {
+        console.warn('Approved check failed (continuing to allow submission):', approvedError.message);
       }
 
-      if (dupData && dupData.length > 0) {
-        const blockingRecords = dupData.map((entry) => ({
-          id: entry.id,
-          status: entry.status,
-          killer_id: entry.killer_id,
-          survivor_id: entry.survivor_id,
-          username: entry.username,
-          legacy: entry.legacy,
-        }));
-
-        console.groupCollapsed('[P100 Submission] Denied duplicate attempt');
-        console.info('Attempted submission:', {
-          username: sanitizedUsername,
-          characterType: formData.characterType,
-          characterId: formData.characterId,
-        });
-        console.info('Blocking database records (status ∈ pending/approved, legacy=false):');
-        console.table(blockingRecords);
-        console.groupEnd();
-
-        // Auto-reject user attempt to prevent spam/doubles.
-        const autoRejectReason = 'A submission for this character already exists and is pending or approved.';
-        const submissionData = {
-          username: sanitizedUsername,
-          screenshot_url: null as string | null, // we will skip upload to save storage since it's auto-rejected
-          killer_id: targetKillerId,
-            survivor_id: targetSurvivorId,
-          status: 'rejected' as const,
-          rejection_reason: autoRejectReason,
-          comment: sanitizeComment(formData.comment),
-        };
-
-        // (Optional) Insert record to keep an audit trail of attempted duplicate submissions.
-        const { error: autoRejectError } = await supabase.from('p100_submissions').insert([submissionData]);
-        if (autoRejectError) {
-          console.error('Failed to record auto-rejected duplicate attempt:', autoRejectError.message);
-        }
-
-        setMessage('Denied: ' + autoRejectReason);
+      if (approvedData && approvedData.length > 0) {
+        console.info('[P100 Submission] Blocked: User already has approved submission for this character');
+        setMessage('You already have an approved P100 for this character.');
         setIsSubmitting(false);
         return;
       }
 
-      // Step 3: Proceed with normal upload & insertion when not duplicate.
+      // Step 3: Delete any previous pending/rejected submissions for this username + character
+      // This ensures only the most recent submission is kept
+      let deleteQuery = supabase
+        .from('p100_submissions')
+        .delete()
+        .eq('username', sanitizedUsername)
+        .eq('legacy', false);
+
+      if (targetKillerId) {
+        deleteQuery = deleteQuery.eq('killer_id', targetKillerId);
+      } else if (targetSurvivorId) {
+        deleteQuery = deleteQuery.eq('survivor_id', targetSurvivorId);
+      }
+
+      const { error: deleteError } = await deleteQuery;
+      if (deleteError) {
+        console.warn('Failed to delete previous submissions:', deleteError.message);
+      }
+
+      // Step 4: Proceed with normal upload & insertion.
       const fileExt = formData.screenshot.name.split('.').pop()?.toLowerCase();
       if (!fileExt) throw new Error('Invalid file type');
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
@@ -270,12 +270,13 @@ export default function SubmissionPage() {
   const { error: submitError } = await supabase.from('p100_submissions').insert([submissionData]);
       if (submitError) throw new Error('Failed to submit P100: ' + submitError.message);
       
-      setMessage('P100 submission successful! It will be reviewed by an admin.');
-      
+      // Reset form
       setFormData({ username: '', characterType: 'killer', characterId: '', screenshot: null, comment: ''});
-
       const fileInput = document.getElementById('screenshot') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
+      
+      // Show success dialog
+      setShowSuccessDialog(true);
     } catch (error) {
       console.error('Submission error:', error);
       setMessage(`Error: ${error instanceof Error ? error.message : 'Something went wrong'}`);
@@ -468,6 +469,38 @@ export default function SubmissionPage() {
           )}
         </div>
       </main>
+
+      {/* Success Dialog */}
+      <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <DialogContent className="bg-black border-2 border-green-600">
+          <DialogHeader>
+            <DialogTitle className="text-green-400 text-2xl">Submission Accepted!</DialogTitle>
+            <DialogDescription className="text-gray-300 text-base pt-4">
+              Your P100 submission has been received and will be reviewed by an admin.
+              <br /><br />
+              You can check the status of your submission on the status page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 mt-4">
+            <Button
+              onClick={() => {
+                setShowSuccessDialog(false);
+                router.push('/submission/status');
+              }}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+            >
+              Check Status
+            </Button>
+            <Button
+              onClick={() => setShowSuccessDialog(false)}
+              variant="outline"
+              className="flex-1 border-red-600 text-white hover:bg-red-600"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </BackgroundWrapper>
   );
 }
