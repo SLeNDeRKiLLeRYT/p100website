@@ -3181,9 +3181,10 @@ export default function AdminPage() {
                                         
                                         try {
                                           const selectedArtist = value !== 'none' ? artists.find(a => a.id === value) : null;
+                                          const supabaseAdmin = createAdminClient();
                                           
                                           // Update artwork in database (without reloading page)
-                                          const { error } = await supabase
+                                          const { error } = await supabaseAdmin
                                             .from('artworks')
                                             .upsert({
                                               artwork_url: artwork.artwork_url,
