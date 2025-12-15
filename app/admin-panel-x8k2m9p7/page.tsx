@@ -221,6 +221,7 @@ export default function AdminPage() {
   const [newArtworkPlacement, setNewArtworkPlacement] = useState<'gallery' | 'header' | 'legacy_header' | 'background'>('gallery');
   const [isCreatingArtwork, setIsCreatingArtwork] = useState(false);
   const [characterImageSearch, setCharacterImageSearch] = useState('');
+  const [selectedArtworkCharacter, setSelectedArtworkCharacter] = useState<{ type: 'killer' | 'survivor'; id: string } | null>(null);
   // Storage browser state
   const [storageArtworks, setStorageArtworks] = useState<StorageItem[]>([]);
   const [storageLoading, setStorageLoading] = useState(false);
@@ -2997,100 +2998,272 @@ export default function AdminPage() {
           {/* ARTWORKS TAB - Character Images Manager */}
           <TabsContent value="artworks" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6 space-y-6">
-              {/* Search and Controls */}
-              <div className="sticky top-0 z-10 bg-black/90 backdrop-blur-sm p-4 border border-red-600/20 rounded-lg">
-                <div className="flex flex-wrap gap-4 items-center">
-                  <div className="flex-1 min-w-[200px]">
-                    <Input 
-                      value={characterImageSearch} 
-                      onChange={(e) => setCharacterImageSearch(e.target.value)} 
-                      placeholder="Search by character or artist name..." 
-                      className="bg-black/40 border-red-600/20 text-white" 
-                    />
+              {/* Character Selector - Must select first */}
+              <div className="bg-red-900/20 border border-red-600 rounded-lg p-6">
+                <h3 className="text-white font-semibold mb-4">Select a Character</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-white">Killers</Label>
+                    <Select 
+                      value={selectedArtworkCharacter?.type === 'killer' && selectedArtworkCharacter?.id ? selectedArtworkCharacter.id : ''}
+                      onValueChange={(value) => {
+                        setSelectedArtworkCharacter({ type: 'killer', id: value });
+                      }}
+                    >
+                      <SelectTrigger className="bg-black border-red-600 text-white mt-1">
+                        <SelectValue placeholder="Select a killer..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-black border-red-600">
+                        {allKillers.map(k => (
+                          <SelectItem key={k.id} value={k.id} className="text-white">
+                            {k.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      id="toggle-previews" 
-                      type="checkbox" 
-                      className="accent-red-600" 
-                      checked={showArtworkPreviews} 
-                      onChange={(e)=> setShowArtworkPreviews(e.target.checked)} 
-                    />
-                    <Label htmlFor="toggle-previews" className="text-white text-sm">Show thumbnails</Label>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    className="border-blue-600 text-blue-300 hover:bg-blue-600/20" 
-                    onClick={() => fetchAllCharacters()} 
-                    disabled={artworksLoading}
-                  >
-                    Refresh
-                  </Button>
-                  <div className="text-xs text-gray-400">
-                    Character artwork management
+                  <div>
+                    <Label className="text-white">Survivors</Label>
+                    <Select 
+                      value={selectedArtworkCharacter?.type === 'survivor' && selectedArtworkCharacter?.id ? selectedArtworkCharacter.id : ''}
+                      onValueChange={(value) => {
+                        setSelectedArtworkCharacter({ type: 'survivor', id: value });
+                      }}
+                    >
+                      <SelectTrigger className="bg-black border-red-600 text-white mt-1">
+                        <SelectValue placeholder="Select a survivor..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-black border-red-600">
+                        {allSurvivors.map(s => (
+                          <SelectItem key={s.id} value={s.id} className="text-white">
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
+                {selectedArtworkCharacter && (
+                  <Button
+                    onClick={() => setSelectedArtworkCharacter(null)}
+                    variant="outline"
+                    className="border-red-600 text-red-400 hover:bg-red-600/20 mt-4"
+                  >
+                    Clear Selection
+                  </Button>
+                )}
               </div>
 
-              {artworksLoading && <div className="text-white text-center py-8">Loading...</div>}
+              {/* Content only shows if character is selected */}
+              {selectedArtworkCharacter ? (
+                <>
+                  {/* Search and Controls */}
+                  <div className="sticky top-0 z-10 bg-black/90 backdrop-blur-sm p-4 border border-red-600/20 rounded-lg">
+                    <div className="flex flex-wrap gap-4 items-center">
+                      <div className="flex items-center gap-2">
+                        <input 
+                          id="toggle-previews" 
+                          type="checkbox" 
+                          className="accent-red-600" 
+                          checked={showArtworkPreviews} 
+                          onChange={(e)=> setShowArtworkPreviews(e.target.checked)} 
+                        />
+                        <Label htmlFor="toggle-previews" className="text-white text-sm">Show thumbnails</Label>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        className="border-blue-600 text-blue-300 hover:bg-blue-600/20" 
+                        onClick={() => fetchAllCharacters()} 
+                        disabled={artworksLoading}
+                      >
+                        Refresh
+                      </Button>
+                      <div className="text-xs text-gray-400">
+                        Character artwork management
+                      </div>
+                    </div>
+                  </div>
 
-              <GroupedArtworks
-                killers={allKillers}
-                survivors={allSurvivors}
-                artists={artists}
-                showPreviews={showArtworkPreviews}
-                searchTerm={characterImageSearch}
-                onUpdateField={async (characterType, characterId, fieldName, newValue) => {
-                  try {
-                    const supabaseAdmin = createAdminClient();
-                    const tableName = characterType === 'killer' ? 'killers' : 'survivors';
-                    const { error } = await supabaseAdmin
-                      .from(tableName)
-                      .update({ [fieldName]: newValue })
-                      .eq('id', characterId);
+                  {artworksLoading && <div className="text-white text-center py-8">Loading...</div>}
+
+                  {/* Show only the selected character's artworks */}
+                  {(() => {
+                    const selectedCharacter = selectedArtworkCharacter.type === 'killer' 
+                      ? allKillers.find(k => k.id === selectedArtworkCharacter.id)
+                      : allSurvivors.find(s => s.id === selectedArtworkCharacter.id);
                     
-                    if (error) throw error;
+                    if (!selectedCharacter) return null;
                     
-                    toast({ title: 'Updated', description: 'Image field updated successfully' });
-                    await fetchAllCharacters();
-                  } catch (e: any) {
-                    console.error(e);
-                    toast({ title: 'Error', description: 'Failed to update field', variant: 'destructive' });
-                  }
-                }}
-                onDeleteFromArray={async (characterType, characterId, fieldName, urlToRemove) => {
-                  if (!confirm('Remove this image?')) return;
-                  try {
-                    const supabaseAdmin = createAdminClient();
-                    const tableName = characterType === 'killer' ? 'killers' : 'survivors';
-                    
-                    // Get current character data
-                    const { data: character, error: fetchError } = await supabaseAdmin
-                      .from(tableName)
-                      .select(fieldName)
-                      .eq('id', characterId)
-                      .single();
-                    
-                    if (fetchError) throw fetchError;
-                    
-                    const currentArray = ((character as any)[fieldName] as string[]) || [];
-                    const newArray = currentArray.filter(url => url !== urlToRemove);
-                    
-                    const { error } = await supabaseAdmin
-                      .from(tableName)
-                      .update({ [fieldName]: newArray })
-                      .eq('id', characterId);
-                    
-                    if (error) throw error;
-                    
-                    toast({ title: 'Removed', description: 'Image removed successfully' });
-                    await fetchAllCharacters();
-                  } catch (e: any) {
-                    console.error(e);
-                    toast({ title: 'Error', description: 'Failed to remove image', variant: 'destructive' });
-                  }
-                }}
-              />
+                    return (
+                      <div className="space-y-6">
+                        <div className="bg-black/40 border border-red-600/20 rounded-lg p-6">
+                          <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-2xl font-mono text-white">
+                              {selectedCharacter.name}
+                              <span className="text-sm text-gray-400 ml-2">({selectedArtworkCharacter.type})</span>
+                            </h2>
+                            <Button
+                              onClick={() => setAddArtworkCharacter({ type: selectedArtworkCharacter.type, character: selectedCharacter })}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              size="sm"
+                            >
+                              + Add Artwork
+                            </Button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {selectedCharacter._artworks && selectedCharacter._artworks.length > 0 ? (
+                              selectedCharacter._artworks.map((artwork: any, idx: number) => {
+                                const artistName = artworkArtists[artwork.artwork_url];
+                                return (
+                                  <div key={idx} className="space-y-2">
+                                    {/* Artwork Image */}
+                                    {showArtworkPreviews && (
+                                      <div className="relative aspect-square overflow-hidden rounded-lg bg-black/20 group">
+                                        <img
+                                          src={artwork.artwork_url}
+                                          alt={`Artwork by ${artistName || 'Unknown'}`}
+                                          className="w-full h-full object-contain transition-transform group-hover:scale-105"
+                                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                        />
+                                        {/* Usage Badge */}
+                                        <div className="absolute top-2 left-2 px-2 py-1 bg-black/80 rounded text-xs text-white">
+                                          {artwork.usage_type}
+                                        </div>
+                                        {/* Delete Button */}
+                                        <button
+                                          onClick={async () => {
+                                            if (!confirm(`Delete this ${artwork.usage_type} artwork?`)) return;
+                                            
+                                            try {
+                                              const supabaseAdmin = createAdminClient();
+                                              
+                                              // Delete from character_artworks (this is the link)
+                                              const { error } = await supabaseAdmin
+                                                .from('character_artworks')
+                                                .delete()
+                                                .eq('character_id', selectedCharacter.id)
+                                                .eq('character_type', selectedArtworkCharacter.type)
+                                                .eq('artwork_id', artwork.artwork_id);
+                                              
+                                              if (error) throw error;
+                                              
+                                              toast({
+                                                title: 'Deleted',
+                                                description: 'Artwork removed successfully'
+                                              });
+                                              
+                                              await fetchAllCharacters();
+                                            } catch (err: any) {
+                                              console.error('Error deleting artwork:', err);
+                                              toast({
+                                                title: 'Error',
+                                                description: 'Failed to delete artwork',
+                                                variant: 'destructive'
+                                              });
+                                            }
+                                          }}
+                                          className="absolute top-2 right-2 p-1.5 bg-red-600/80 hover:bg-red-600 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                          title="Delete artwork"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                          </svg>
+                                        </button>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Artist Dropdown - NO RELOAD ON UPDATE */}
+                                    <Select
+                                      value={artists.find(a => a.name === artistName)?.id || 'none'}
+                                      onValueChange={async (value) => {
+                                        setUpdatingArtist(artwork.artwork_url);
+                                        
+                                        try {
+                                          const selectedArtist = value !== 'none' ? artists.find(a => a.id === value) : null;
+                                          
+                                          // Update artwork in database (without reloading page)
+                                          const { error } = await supabase
+                                            .from('artworks')
+                                            .upsert({
+                                              artwork_url: artwork.artwork_url,
+                                              artist_name: selectedArtist?.name || null,
+                                              artist_url: selectedArtist ? (selectedArtist as any).url : null,
+                                              platform: selectedArtist ? (selectedArtist as any).platform : null,
+                                              updated_at: new Date().toISOString()
+                                            }, {
+                                              onConflict: 'artwork_url',
+                                              ignoreDuplicates: false
+                                            });
+                                          
+                                          if (error) {
+                                            console.error('Error updating artwork artist:', error);
+                                            toast({ 
+                                              title: 'Error', 
+                                              description: 'Failed to update artist',
+                                              variant: 'destructive'
+                                            });
+                                            setUpdatingArtist(null);
+                                            return;
+                                          }
+                                          
+                                          // Update local state ONLY - NO RELOAD
+                                          setArtworkArtists(prev => ({ ...prev, [artwork.artwork_url]: selectedArtist?.name || null }));
+                                          toast({ 
+                                            title: 'Updated', 
+                                            description: selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared'
+                                          });
+                                          setUpdatingArtist(null);
+                                        } catch (err) {
+                                          console.error('Error updating artist:', err);
+                                          toast({ 
+                                            title: 'Error', 
+                                            description: 'Failed to update artist',
+                                            variant: 'destructive'
+                                          });
+                                          setUpdatingArtist(null);
+                                        }
+                                      }}
+                                      disabled={updatingArtist === artwork.artwork_url}
+                                    >
+                                      <SelectTrigger className="w-full bg-black/40 border-red-600/20 text-white h-8 text-xs hover:border-red-600/40">
+                                        <SelectValue placeholder={updatingArtist === artwork.artwork_url ? 'Updating...' : 'Unknown Artist'} />
+                                      </SelectTrigger>
+                                      <SelectContent className="bg-black border-red-600">
+                                        <SelectItem value="none" className="text-white">Unknown Artist</SelectItem>
+                                        {artists.map(artist => (
+                                          <SelectItem key={artist.id} value={artist.id} className="text-white">
+                                            {artist.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    
+                                    {/* Artist Link */}
+                                    {artistName && (
+                                      <div className="text-xs text-blue-400 truncate" title={artistName}>
+                                        {artistName}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="col-span-full text-center text-gray-400 py-8">
+                                No artworks for this character
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              ) : (
+                <div className="text-center text-gray-400 py-12">
+                  <p className="text-lg">👆 Select a character to view and manage their artworks</p>
+                </div>
+              )}
             </div>
           </TabsContent>
 
