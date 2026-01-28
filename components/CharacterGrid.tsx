@@ -46,7 +46,7 @@ export default function CharacterGrid({ characters, type }: CharacterGridProps) 
               priority={index < 6} // Prioritize first 6 images
               loading={index < 6 ? "eager" : "lazy"}
             />
-            <div className="character-name text-[0.5rem] md:text-[0.625rem] font-mono font-semibold text-secondary shadow-text rounded-sm text-center">
+            <div className="character-name text-xs font-mono font-semibold text-secondary shadow-text rounded-sm text-center">
               {character.name.toUpperCase()}
             </div>
           </div>
