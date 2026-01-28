@@ -18,7 +18,7 @@ export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideC
   
   return (
     // FIX: Removed mb-8 (margin-bottom) as spacing is now handled by the page layout.
-    <nav className="flex flex-wrap gap-2 sm:gap-4">
+    <nav className="flex flex-wrap gap-2 sm:gap-4 mb-6 md:mb-8">
       {!hideHome && (
         <Link href="/" className={`nav-button ${pathname === "/" ? "active" : ""}`}>
           HOME
