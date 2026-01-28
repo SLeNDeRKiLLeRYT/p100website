@@ -89,7 +89,7 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
   
   const { data: survivor, error: survivorError } = await supabase
     .from('survivors')
-    .select('id, name, image_url, created_at, updated_at, order_num, background_credit_name, background_credit_url')
+    .select('id, name, image_url, created_at, updated_at, order_num, background_image_url, background_credit_name, background_credit_url')
     .eq('id', slug)
     .single();
   
@@ -145,7 +145,7 @@ async function getSurvivorData(slug: string): Promise<SurvivorData | null> {
     artist_urls: galleryArtworks.map(a => a.artwork_url),
     legacy_header_urls: legacyHeaders.map(a => a.artwork_url),
     header_url: header?.artwork_url,
-    background_image_url: background?.artwork_url,
+    background_image_url: background?.artwork_url || survivor.background_image_url,
     players: players || [],
     gallery_artworks: galleryArtworks,
     legacy_headers: legacyHeaders,
