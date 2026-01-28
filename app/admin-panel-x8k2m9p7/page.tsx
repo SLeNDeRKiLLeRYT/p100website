@@ -2813,7 +2813,11 @@ export default function AdminPage() {
                   {allKillers.map((killer) => (<TableRow key={killer.id} className="border-red-600/30">
                     <TableCell>{killer.image_url && <img src={killer.image_url} alt={killer.name} className="w-12 h-12 object-cover rounded"/>}</TableCell>
                     <TableCell className="text-white">{killer.name}</TableCell><TableCell className="text-gray-400">{killer.id}</TableCell><TableCell className="text-gray-400">{killer.order || 0}</TableCell>
-                    <TableCell><div className="flex gap-2"><Button onClick={() => setEditingKiller(killer)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(killer.id, 'killer')} disabled={deletingItem === killer.id} size="sm" variant="destructive">{deletingItem === killer.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
+                    <TableCell><div className="flex gap-2"><Button onClick={() => {
+                      // Only pass valid DB fields to the editing dialog
+                      const { _artworks, ...dbFields } = killer;
+                      setEditingKiller(dbFields);
+                    }} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(killer.id, 'killer')} disabled={deletingItem === killer.id} size="sm" variant="destructive">{deletingItem === killer.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                   </TableRow>))}
                 </TableBody></Table></div>
               )}
@@ -2831,7 +2835,10 @@ export default function AdminPage() {
                         {allSurvivors.map((survivor) => (<TableRow key={survivor.id} className="border-red-600/30">
                             <TableCell>{survivor.image_url && <img src={survivor.image_url} alt={survivor.name} className="w-12 h-12 object-cover rounded"/>}</TableCell>
                             <TableCell className="text-white">{survivor.name}</TableCell><TableCell className="text-gray-400">{survivor.id}</TableCell><TableCell className="text-gray-400">{survivor.order_num || 0}</TableCell>
-                            <TableCell><div className="flex gap-2"><Button onClick={() => setEditingSurvivor(survivor)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(survivor.id, 'survivor')} disabled={deletingItem === survivor.id} size="sm" variant="destructive">{deletingItem === survivor.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
+                            <TableCell><div className="flex gap-2"><Button onClick={() => {
+                              const { _artworks, ...dbFields } = survivor;
+                              setEditingSurvivor(dbFields);
+                            }} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(survivor.id, 'survivor')} disabled={deletingItem === survivor.id} size="sm" variant="destructive">{deletingItem === survivor.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                         </TableRow>))}
                     </TableBody></Table></div>
                 )}
