@@ -13,7 +13,7 @@ export default function CharacterNavigation({ previous, next }: CharacterNavigat
         <>
             {/* Previous Button - Left Side Middle */}
             {previous && (
-                <div className="fixed left-4 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center">
+                <div className="hidden md:flex fixed left-4 top-1/2 -translate-y-1/2 z-50 flex-col items-center">
                     <Link
                         href={`/${previous.type === 'killer' ? 'killers' : 'survivors'}/${previous.id}`}
                         className="relative flex items-center justify-center w-20 h-32 bg-black/80 hover:bg-black/60 border-2 border-red-600 hover:border-red-400 rounded-xl transition-all duration-200 hover:scale-105 shadow-lg backdrop-blur-sm group overflow-hidden"
@@ -51,7 +51,7 @@ export default function CharacterNavigation({ previous, next }: CharacterNavigat
 
             {/* Next Button - Right Side Middle */}
             {next && (
-                <div className="fixed right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center">
+                <div className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-50 flex-col items-center">
                     <Link
                         href={`/${next.type === 'killer' ? 'killers' : 'survivors'}/${next.id}`}
                         className="relative flex items-center justify-center w-20 h-32 bg-black/80 hover:bg-black/60 border-2 border-red-600 hover:border-red-400 rounded-xl transition-all duration-200 hover:scale-105 shadow-lg backdrop-blur-sm group overflow-hidden"
