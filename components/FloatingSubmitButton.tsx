@@ -32,7 +32,7 @@ export default function FloatingSubmitButton() {
       {pathname !== '/search' && (
         <Link
           href="/search"
-          className="text-sm text-red-300 hover:text-red-200 transition-colors underline mt-1 font-medium"
+          className="hidden sm:inline text-sm text-red-300 hover:text-red-200 transition-colors underline mt-1 font-medium"
         >
           Looking for someone?
         </Link>
