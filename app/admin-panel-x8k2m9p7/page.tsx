@@ -1619,16 +1619,31 @@ export default function AdminPage() {
       const { id, created_at, _artworks, header_url, background_image_url, artist_urls, legacy_header_urls, ...rest } = killerData;
       // Only send valid DB columns
       const updateData = { ...rest };
-      // Add back valid fields if they exist in the table
       if (header_url !== undefined) updateData.header_url = header_url;
       if (background_image_url !== undefined) updateData.background_image_url = background_image_url;
       if (artist_urls !== undefined) updateData.artist_urls = artist_urls;
       if (legacy_header_urls !== undefined) updateData.legacy_header_urls = legacy_header_urls;
+      let killerId = id;
       if (id && allKillers.find(k => k.id === id)) {
         await supabase.from('killers').update(updateData).eq('id', id).throwOnError();
       } else {
-        await supabase.from('killers').insert(updateData).throwOnError();
+        const { data: inserted, error: insertErr } = await supabase.from('killers').insert(updateData).select('id').single();
+        if (insertErr) throw insertErr;
+        killerId = inserted.id;
       }
+
+      // --- ARTWORK SYSTEM SYNC ---
+      if (background_image_url && killerId) {
+        // Import addArtworkToCharacter from artwork-management
+        const { addArtworkToCharacter } = await import('@/lib/artwork-management');
+        await addArtworkToCharacter(
+          killerId,
+          'killer',
+          background_image_url,
+          'background'
+        );
+      }
+
       toast({ title: 'Success', description: 'Killer saved successfully.' });
       await fetchAllCharacters();
       setEditingKiller(null);
@@ -1654,11 +1669,26 @@ export default function AdminPage() {
       if (background_image_url !== undefined) updateData.background_image_url = background_image_url;
       if (artist_urls !== undefined) updateData.artist_urls = artist_urls;
       if (legacy_header_urls !== undefined) updateData.legacy_header_urls = legacy_header_urls;
+      let survivorId = id;
       if (id && allSurvivors.find(s => s.id === id)) {
         await supabase.from('survivors').update(updateData).eq('id', id).throwOnError();
       } else {
-        await supabase.from('survivors').insert(updateData).throwOnError();
+        const { data: inserted, error: insertErr } = await supabase.from('survivors').insert(updateData).select('id').single();
+        if (insertErr) throw insertErr;
+        survivorId = inserted.id;
       }
+
+      // --- ARTWORK SYSTEM SYNC ---
+      if (background_image_url && survivorId) {
+        const { addArtworkToCharacter } = await import('@/lib/artwork-management');
+        await addArtworkToCharacter(
+          survivorId,
+          'survivor',
+          background_image_url,
+          'background'
+        );
+      }
+
       toast({ title: 'Success', description: 'Survivor saved successfully.' });
       await fetchAllCharacters();
       setEditingSurvivor(null);
