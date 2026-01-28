@@ -1634,14 +1634,19 @@ export default function AdminPage() {
 
       // --- ARTWORK SYSTEM SYNC ---
       if (background_image_url && killerId) {
-        // Import addArtworkToCharacter from artwork-management
-        const { addArtworkToCharacter } = await import('@/lib/artwork-management');
-        await addArtworkToCharacter(
-          killerId,
-          'killer',
-          background_image_url,
-          'background'
-        );
+        try {
+          const { addArtworkToCharacter } = await import('@/lib/artwork-management');
+          await addArtworkToCharacter(
+            killerId,
+            'killer',
+            background_image_url,
+            'background',
+            undefined,
+            supabase
+          );
+        } catch (artworkErr) {
+          console.warn('Artwork sync failed (background still saved to killers table):', artworkErr);
+        }
       }
 
       toast({ title: 'Success', description: 'Killer saved successfully.' });
@@ -1680,13 +1685,19 @@ export default function AdminPage() {
 
       // --- ARTWORK SYSTEM SYNC ---
       if (background_image_url && survivorId) {
-        const { addArtworkToCharacter } = await import('@/lib/artwork-management');
-        await addArtworkToCharacter(
-          survivorId,
-          'survivor',
-          background_image_url,
-          'background'
-        );
+        try {
+          const { addArtworkToCharacter } = await import('@/lib/artwork-management');
+          await addArtworkToCharacter(
+            survivorId,
+            'survivor',
+            background_image_url,
+            'background',
+            undefined,
+            supabase
+          );
+        } catch (artworkErr) {
+          console.warn('Artwork sync failed (background still saved to survivors table):', artworkErr);
+        }
       }
 
       toast({ title: 'Success', description: 'Survivor saved successfully.' });
