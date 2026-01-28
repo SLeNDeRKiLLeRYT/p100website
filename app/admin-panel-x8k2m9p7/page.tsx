@@ -1625,27 +1625,39 @@ export default function AdminPage() {
       toast({ title: 'Success', description: 'Killer saved successfully.' });
       await fetchAllCharacters();
       setEditingKiller(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving killer:', error);
-      toast({ title: 'Error', description: 'Failed to save killer.', variant: 'destructive' });
+      let details = '';
+      if (error instanceof Error) {
+        details = `\nStack: ${error.stack || ''}`;
+      } else if (typeof error === 'object' && error !== null) {
+        details = `\nError object: ${JSON.stringify(error)}`;
+      }
+      toast({ title: 'Error', description: `Failed to save killer: ${error.message || error} ${details}`, variant: 'destructive' });
     }
   };
 
   const saveSurvivor = async (survivorData: any) => {
     try {
-        const supabase = createAdminClient();
-        const { id, created_at, ...updateData } = survivorData;
-        if (id && allSurvivors.find(s => s.id === id)) {
-            await supabase.from('survivors').update(updateData).eq('id', id).throwOnError();
-        } else {
-            await supabase.from('survivors').insert(updateData).throwOnError();
-        }
-        toast({ title: 'Success', description: 'Survivor saved successfully.' });
-        await fetchAllCharacters();
-        setEditingSurvivor(null);
-    } catch (error) {
-        console.error('Error saving survivor:', error);
-        toast({ title: 'Error', description: 'Failed to save survivor.', variant: 'destructive' });
+      const supabase = createAdminClient();
+      const { id, created_at, ...updateData } = survivorData;
+      if (id && allSurvivors.find(s => s.id === id)) {
+        await supabase.from('survivors').update(updateData).eq('id', id).throwOnError();
+      } else {
+        await supabase.from('survivors').insert(updateData).throwOnError();
+      }
+      toast({ title: 'Success', description: 'Survivor saved successfully.' });
+      await fetchAllCharacters();
+      setEditingSurvivor(null);
+    } catch (error: any) {
+      console.error('Error saving survivor:', error);
+      let details = '';
+      if (error instanceof Error) {
+        details = `\nStack: ${error.stack || ''}`;
+      } else if (typeof error === 'object' && error !== null) {
+        details = `\nError object: ${JSON.stringify(error)}`;
+      }
+      toast({ title: 'Error', description: `Failed to save survivor: ${error.message || error} ${details}`, variant: 'destructive' });
     }
   };
 
