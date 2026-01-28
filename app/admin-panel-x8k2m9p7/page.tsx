@@ -1616,7 +1616,14 @@ export default function AdminPage() {
   const saveKiller = async (killerData: any) => {
     try {
       const supabase = createAdminClient();
-      const { id, created_at, ...updateData } = killerData;
+      const { id, created_at, _artworks, header_url, background_image_url, artist_urls, legacy_header_urls, ...rest } = killerData;
+      // Only send valid DB columns
+      const updateData = { ...rest };
+      // Add back valid fields if they exist in the table
+      if (header_url !== undefined) updateData.header_url = header_url;
+      if (background_image_url !== undefined) updateData.background_image_url = background_image_url;
+      if (artist_urls !== undefined) updateData.artist_urls = artist_urls;
+      if (legacy_header_urls !== undefined) updateData.legacy_header_urls = legacy_header_urls;
       if (id && allKillers.find(k => k.id === id)) {
         await supabase.from('killers').update(updateData).eq('id', id).throwOnError();
       } else {
@@ -1640,7 +1647,13 @@ export default function AdminPage() {
   const saveSurvivor = async (survivorData: any) => {
     try {
       const supabase = createAdminClient();
-      const { id, created_at, ...updateData } = survivorData;
+      const { id, created_at, _artworks, header_url, background_image_url, artist_urls, legacy_header_urls, ...rest } = survivorData;
+      // Only send valid DB columns
+      const updateData = { ...rest };
+      if (header_url !== undefined) updateData.header_url = header_url;
+      if (background_image_url !== undefined) updateData.background_image_url = background_image_url;
+      if (artist_urls !== undefined) updateData.artist_urls = artist_urls;
+      if (legacy_header_urls !== undefined) updateData.legacy_header_urls = legacy_header_urls;
       if (id && allSurvivors.find(s => s.id === id)) {
         await supabase.from('survivors').update(updateData).eq('id', id).throwOnError();
       } else {
