@@ -1326,6 +1326,22 @@ export default function AdminPage() {
     }
   }, [toast, fetchBlacklistedUsers]);
 
+  const toggleBlacklistSuper = useCallback(async (id: string, currentSuper: boolean) => {
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from('blacklisted_users')
+        .update({ is_super: !currentSuper })
+        .eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Updated', description: `Super blacklist ${!currentSuper ? 'enabled' : 'disabled'}.` });
+      await fetchBlacklistedUsers();
+    } catch (e: any) {
+      console.error('Error toggling super blacklist', e);
+      toast({ title: 'Error', description: 'Failed to update.', variant: 'destructive' });
+    }
+  }, [toast, fetchBlacklistedUsers]);
+
 
   const fetchStorageItems = async (bucket: string) => {
     setLoadingStorage(true);
@@ -3472,6 +3488,7 @@ export default function AdminPage() {
                   <thead>
                     <tr className="border-b border-red-600">
                       <th className="text-left text-white p-3">Username</th>
+                      <th className="text-center text-white p-3">Super</th>
                       <th className="text-left text-white p-3">Reason</th>
                       <th className="text-left text-white p-3">Added</th>
                       <th className="text-left text-white p-3">Added By</th>
@@ -3491,6 +3508,15 @@ export default function AdminPage() {
                           <td className="text-white p-3 font-mono">
                             {user.username}
                             {user.is_super && <span className="ml-2 px-1.5 py-0.5 bg-red-600 text-white text-xs rounded font-sans">SUPER</span>}
+                          </td>
+                          <td className="text-center p-3">
+                            <input
+                              type="checkbox"
+                              checked={user.is_super || false}
+                              onChange={() => toggleBlacklistSuper(user.id, user.is_super || false)}
+                              className="w-4 h-4 accent-red-600 cursor-pointer"
+                              title={user.is_super ? 'Disable super blacklist' : 'Enable super blacklist'}
+                            />
                           </td>
                           <td className="text-gray-300 p-3">{user.reason || '-'}</td>
                           <td className="text-gray-400 p-3 text-sm">
