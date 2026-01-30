@@ -187,15 +187,27 @@ export default function SubmissionPage() {
     setIsSubmitting(true);
     setMessage('');
     try {
-      // Check if user is blacklisted
-      const { data: blacklistData, error: blacklistError } = await supabase
+      // Check if user is blacklisted (exact match)
+      const { data: blacklistData } = await supabase
         .from('blacklisted_users')
         .select('username')
         .eq('username', sanitizedUsername.toLowerCase())
         .single();
-      
+
       if (blacklistData) {
-        setMessage('Unable to submit. Please contact support.');
+        setMessage('Unable to submit. Please contact support: https://discord.gg/GFPuzehJZs');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Check super blacklist (partial/contains match)
+      const { data: superBlacklist } = await supabase
+        .from('blacklisted_users')
+        .select('username')
+        .eq('is_super', true);
+
+      if (superBlacklist && superBlacklist.some(entry => sanitizedUsername.toLowerCase().includes(entry.username))) {
+        setMessage('Unable to submit. Please contact support: https://discord.gg/GFPuzehJZs');
         setIsSubmitting(false);
         return;
       }
