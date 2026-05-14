@@ -18,7 +18,7 @@ const defaultBackgrounds = {
   '/survivors': '/survivorpage.png',
   '/credits': 'https://images.unsplash.com/photo-1519638399535-1b036603ac77?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3',
   '/search': '/search.png',
-  '/submission': '/p100submissions.png',
+  '/submission': '/art140526.png',
 };
 
 export default function BackgroundWrapper({ children, characterId, backgroundUrl }: BackgroundWrapperProps) {

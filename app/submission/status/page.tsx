@@ -186,7 +186,7 @@ export default function SubmissionStatusPage() {
   };
 
   return (
-    <BackgroundWrapper backgroundUrl="/status.png">
+    <BackgroundWrapper backgroundUrl="/art140526.png">
       {/* Navigation added for consistency with other pages */}
       <div className="container mx-auto px-4 pt-6">
         <Navigation />
