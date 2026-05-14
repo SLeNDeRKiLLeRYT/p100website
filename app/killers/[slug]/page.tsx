@@ -87,10 +87,10 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
   const supabase = createServerClient();
   const { data: killer, error: killerError } = await supabase
     .from('killers')
-    .select('id, name, image_url, created_at, updated_at, order, background_credit_name, background_credit_url')
+    .select('id, name, image_url, created_at, updated_at, order, background_image_url, background_credit_name, background_credit_url')
     .eq('id', slug)
     .single();
-  
+
   if (killerError) {
     console.error('Error fetching killer:', killerError);
     return null;
@@ -99,10 +99,10 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
     console.log('No killer found for slug:', slug);
     return null;
   }
-  
+
   // Fetch artworks from centralized table
   const artworks = await getCharacterArtworks(killer.id, 'killer');
-  
+
   // Group artworks by usage type
   const galleryArtworks = artworks.filter(a => a.usage_type === 'gallery');
   const legacyHeaders = artworks.filter(a => a.usage_type === 'legacy_header');
@@ -141,7 +141,7 @@ async function getKillerData(slug: string): Promise<KillerData | null> {
     artist_urls: galleryArtworks.map(a => a.artwork_url),
     legacy_header_urls: legacyHeaders.map(a => a.artwork_url),
     header_url: header?.artwork_url,
-    background_image_url: background?.artwork_url,
+    background_image_url: background?.artwork_url || killer.background_image_url,
     players: players || [],
     gallery_artworks: galleryArtworks,
     legacy_headers: legacyHeaders,

@@ -142,17 +142,18 @@ export async function addArtworkToCharacter(
   characterType: 'killer' | 'survivor',
   artworkUrl: string,
   usageType: 'gallery' | 'header' | 'legacy_header' | 'background',
-  displayOrder?: number
+  displayOrder?: number,
+  supabaseClient?: any
 ) {
-  const supabase = createServerClient();
-  
+  const supabase = supabaseClient || createServerClient();
+
   // First, ensure the artwork exists
   let { data: artwork } = await supabase
     .from('artworks')
     .select('id')
     .eq('artwork_url', artworkUrl)
     .single();
-  
+
   if (!artwork) {
     // Create the artwork if it doesn't exist
     const { data: newArtwork, error: createError } = await supabase
@@ -160,11 +161,21 @@ export async function addArtworkToCharacter(
       .insert({ artwork_url: artworkUrl })
       .select('id')
       .single();
-    
+
     if (createError) throw createError;
     artwork = newArtwork;
   }
-  
+
+  // For background/header types, remove existing entry first to prevent duplicates
+  if (usageType === 'background' || usageType === 'header') {
+    await supabase
+      .from('character_artworks')
+      .delete()
+      .eq('character_id', characterId)
+      .eq('character_type', characterType)
+      .eq('usage_type', usageType);
+  }
+
   // Create the character-artwork relationship
   const { error } = await supabase
     .from('character_artworks')
@@ -175,7 +186,7 @@ export async function addArtworkToCharacter(
       usage_type: usageType,
       display_order: displayOrder
     });
-  
+
   if (error) throw error;
 }
 

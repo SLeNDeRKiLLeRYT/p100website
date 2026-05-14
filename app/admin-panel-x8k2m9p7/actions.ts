@@ -229,7 +229,13 @@ export async function saveCharacterAction(characterData: any, type: 'killer' | '
     revalidatePath('/admin');
     return { success: true, message: `${type} saved successfully.` };
   } catch(error: any) {
-    return { success: false, message: `Failed to save ${type}: ${error.message}` };
+    let details = '';
+    if (error instanceof Error) {
+      details = `\nStack: ${error.stack || ''}`;
+    } else if (typeof error === 'object' && error !== null) {
+      details = `\nError object: ${JSON.stringify(error)}`;
+    }
+    return { success: false, message: `Failed to save ${type}: ${error.message || error} ${details}` };
   }
 }
 

@@ -184,6 +184,7 @@ export default function AdminPage() {
   const [blacklistSearch, setBlacklistSearch] = useState('');
   const [newBlacklistUsername, setNewBlacklistUsername] = useState('');
   const [newBlacklistReason, setNewBlacklistReason] = useState('');
+  const [newBlacklistSuper, setNewBlacklistSuper] = useState(false);
   const [isAddingToBlacklist, setIsAddingToBlacklist] = useState(false);
   
   // UI State
@@ -193,6 +194,10 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<'all' | 'killer' | 'survivor'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [submissionSearch, setSubmissionSearch] = useState('');
+  const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set());
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
+  const [bulkRejectReason, setBulkRejectReason] = useState('');
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [editingSubmissionUsername, setEditingSubmissionUsername] = useState<string | null>(null);
   const [editingSubmissionValue, setEditingSubmissionValue] = useState('');
   const [lastApprovedGlobal, setLastApprovedGlobal] = useState<string | null>(null);
@@ -1274,7 +1279,8 @@ export default function AdminPage() {
         .insert([{
           username: newBlacklistUsername.trim().toLowerCase(),
           reason: newBlacklistReason.trim() || null,
-          created_by: 'admin'
+          created_by: 'admin',
+          is_super: newBlacklistSuper
         }]);
       
       if (error) {
@@ -1289,6 +1295,7 @@ export default function AdminPage() {
       toast({ title: 'Success', description: 'User added to blacklist' });
       setNewBlacklistUsername('');
       setNewBlacklistReason('');
+      setNewBlacklistSuper(false);
       await fetchBlacklistedUsers();
     } catch (e: any) {
       console.error('Error adding to blacklist', e);
@@ -1296,7 +1303,7 @@ export default function AdminPage() {
     } finally {
       setIsAddingToBlacklist(false);
     }
-  }, [newBlacklistUsername, newBlacklistReason, toast, fetchBlacklistedUsers]);
+  }, [newBlacklistUsername, newBlacklistReason, newBlacklistSuper, toast, fetchBlacklistedUsers]);
 
   // Remove user from blacklist
   const removeFromBlacklist = useCallback(async (id: string, username: string) => {
@@ -1316,6 +1323,22 @@ export default function AdminPage() {
     } catch (e: any) {
       console.error('Error removing from blacklist', e);
       toast({ title: 'Error', description: 'Failed to remove user from blacklist', variant: 'destructive' });
+    }
+  }, [toast, fetchBlacklistedUsers]);
+
+  const toggleBlacklistSuper = useCallback(async (id: string, currentSuper: boolean) => {
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from('blacklisted_users')
+        .update({ is_super: !currentSuper })
+        .eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Updated', description: `Super blacklist ${!currentSuper ? 'enabled' : 'disabled'}.` });
+      await fetchBlacklistedUsers();
+    } catch (e: any) {
+      console.error('Error toggling super blacklist', e);
+      toast({ title: 'Error', description: 'Failed to update.', variant: 'destructive' });
     }
   }, [toast, fetchBlacklistedUsers]);
 
@@ -1500,6 +1523,34 @@ export default function AdminPage() {
     }
   };
 
+  const bulkUpdateSubmissions = async (status: 'approved' | 'rejected', rejectionReason?: string) => {
+    if (selectedSubmissions.size === 0) return;
+    setIsBulkProcessing(true);
+    try {
+      for (const id of selectedSubmissions) {
+        await updateSubmissionStatus(id, status, rejectionReason);
+      }
+      toast({ title: 'Success', description: `${selectedSubmissions.size} submissions ${status}.` });
+      setSelectedSubmissions(new Set());
+      setBulkRejectOpen(false);
+      setBulkRejectReason('');
+    } catch (error) {
+      console.error('Bulk update error:', error);
+      toast({ title: 'Error', description: 'Some submissions failed to update.', variant: 'destructive' });
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  const toggleSubmissionSelection = (id: string) => {
+    setSelectedSubmissions(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const handleDeleteSubmissionScreenshot = async (submission: Submission) => {
     if (!submission.screenshot_url) return;
     if (!confirm('Are you sure you want to delete this screenshot? This is irreversible.')) return;
@@ -1616,36 +1667,102 @@ export default function AdminPage() {
   const saveKiller = async (killerData: any) => {
     try {
       const supabase = createAdminClient();
-      const { id, created_at, ...updateData } = killerData;
+      const { id, created_at, _artworks, header_url, background_image_url, artist_urls, legacy_header_urls, ...rest } = killerData;
+      // Only send valid DB columns
+      const updateData = { ...rest };
+      if (header_url !== undefined) updateData.header_url = header_url;
+      if (background_image_url !== undefined) updateData.background_image_url = background_image_url;
+      if (artist_urls !== undefined) updateData.artist_urls = artist_urls;
+      if (legacy_header_urls !== undefined) updateData.legacy_header_urls = legacy_header_urls;
+      let killerId = id;
       if (id && allKillers.find(k => k.id === id)) {
         await supabase.from('killers').update(updateData).eq('id', id).throwOnError();
       } else {
-        await supabase.from('killers').insert(updateData).throwOnError();
+        const { data: inserted, error: insertErr } = await supabase.from('killers').insert(updateData).select('id').single();
+        if (insertErr) throw insertErr;
+        killerId = inserted.id;
       }
+
+      // --- ARTWORK SYSTEM SYNC ---
+      if (background_image_url && killerId) {
+        try {
+          const { addArtworkToCharacter } = await import('@/lib/artwork-management');
+          await addArtworkToCharacter(
+            killerId,
+            'killer',
+            background_image_url,
+            'background',
+            undefined,
+            supabase
+          );
+        } catch (artworkErr) {
+          console.warn('Artwork sync failed (background still saved to killers table):', artworkErr);
+        }
+      }
+
       toast({ title: 'Success', description: 'Killer saved successfully.' });
       await fetchAllCharacters();
       setEditingKiller(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving killer:', error);
-      toast({ title: 'Error', description: 'Failed to save killer.', variant: 'destructive' });
+      let details = '';
+      if (error instanceof Error) {
+        details = `\nStack: ${error.stack || ''}`;
+      } else if (typeof error === 'object' && error !== null) {
+        details = `\nError object: ${JSON.stringify(error)}`;
+      }
+      toast({ title: 'Error', description: `Failed to save killer: ${error.message || error} ${details}`, variant: 'destructive' });
     }
   };
 
   const saveSurvivor = async (survivorData: any) => {
     try {
-        const supabase = createAdminClient();
-        const { id, created_at, ...updateData } = survivorData;
-        if (id && allSurvivors.find(s => s.id === id)) {
-            await supabase.from('survivors').update(updateData).eq('id', id).throwOnError();
-        } else {
-            await supabase.from('survivors').insert(updateData).throwOnError();
+      const supabase = createAdminClient();
+      const { id, created_at, _artworks, header_url, background_image_url, artist_urls, legacy_header_urls, ...rest } = survivorData;
+      // Only send valid DB columns
+      const updateData = { ...rest };
+      if (header_url !== undefined) updateData.header_url = header_url;
+      if (background_image_url !== undefined) updateData.background_image_url = background_image_url;
+      if (artist_urls !== undefined) updateData.artist_urls = artist_urls;
+      if (legacy_header_urls !== undefined) updateData.legacy_header_urls = legacy_header_urls;
+      let survivorId = id;
+      if (id && allSurvivors.find(s => s.id === id)) {
+        await supabase.from('survivors').update(updateData).eq('id', id).throwOnError();
+      } else {
+        const { data: inserted, error: insertErr } = await supabase.from('survivors').insert(updateData).select('id').single();
+        if (insertErr) throw insertErr;
+        survivorId = inserted.id;
+      }
+
+      // --- ARTWORK SYSTEM SYNC ---
+      if (background_image_url && survivorId) {
+        try {
+          const { addArtworkToCharacter } = await import('@/lib/artwork-management');
+          await addArtworkToCharacter(
+            survivorId,
+            'survivor',
+            background_image_url,
+            'background',
+            undefined,
+            supabase
+          );
+        } catch (artworkErr) {
+          console.warn('Artwork sync failed (background still saved to survivors table):', artworkErr);
         }
-        toast({ title: 'Success', description: 'Survivor saved successfully.' });
-        await fetchAllCharacters();
-        setEditingSurvivor(null);
-    } catch (error) {
-        console.error('Error saving survivor:', error);
-        toast({ title: 'Error', description: 'Failed to save survivor.', variant: 'destructive' });
+      }
+
+      toast({ title: 'Success', description: 'Survivor saved successfully.' });
+      await fetchAllCharacters();
+      setEditingSurvivor(null);
+    } catch (error: any) {
+      console.error('Error saving survivor:', error);
+      let details = '';
+      if (error instanceof Error) {
+        details = `\nStack: ${error.stack || ''}`;
+      } else if (typeof error === 'object' && error !== null) {
+        details = `\nError object: ${JSON.stringify(error)}`;
+      }
+      toast({ title: 'Error', description: `Failed to save survivor: ${error.message || error} ${details}`, variant: 'destructive' });
     }
   };
 
@@ -2346,12 +2463,17 @@ export default function AdminPage() {
                   Showing {submissions.length} of {filteredSubmissionsCount} submissions
                 </div>
                 <Table>
-                  <TableHeader><TableRow className="border-red-600"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Comment</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow className="border-red-600"><TableHead className="text-white w-10"><input type="checkbox" className="w-4 h-4 accent-red-600" checked={submissions.filter(s => s.status === 'pending' && (!submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))).length > 0 && submissions.filter(s => s.status === 'pending' && (!submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))).every(s => selectedSubmissions.has(s.id))} onChange={(e) => { const pendingIds = submissions.filter(s => s.status === 'pending' && (!submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))).map(s => s.id); if (e.target.checked) { setSelectedSubmissions(prev => { const next = new Set(prev); pendingIds.forEach(id => next.add(id)); return next; }); } else { setSelectedSubmissions(prev => { const next = new Set(prev); pendingIds.forEach(id => next.delete(id)); return next; }); } }} /></TableHead><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Comment</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {submissions.length > 0 ? submissions
                       .filter(s => !submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))
                       .map((submission) => (
                       <TableRow key={submission.id} className="border-red-600/20">
+                        <TableCell className="w-10">
+                          {submission.status === 'pending' ? (
+                            <input type="checkbox" className="w-4 h-4 accent-red-600" checked={selectedSubmissions.has(submission.id)} onChange={() => toggleSubmissionSelection(submission.id)} />
+                          ) : <span />}
+                        </TableCell>
                         <TableCell className="text-white">
                           {editingSubmissionUsername === submission.id ? (
                             <div className="flex items-center gap-2">
@@ -2788,7 +2910,11 @@ export default function AdminPage() {
                   {allKillers.map((killer) => (<TableRow key={killer.id} className="border-red-600/30">
                     <TableCell>{killer.image_url && <img src={killer.image_url} alt={killer.name} className="w-12 h-12 object-cover rounded"/>}</TableCell>
                     <TableCell className="text-white">{killer.name}</TableCell><TableCell className="text-gray-400">{killer.id}</TableCell><TableCell className="text-gray-400">{killer.order || 0}</TableCell>
-                    <TableCell><div className="flex gap-2"><Button onClick={() => setEditingKiller(killer)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(killer.id, 'killer')} disabled={deletingItem === killer.id} size="sm" variant="destructive">{deletingItem === killer.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
+                    <TableCell><div className="flex gap-2"><Button onClick={() => {
+                      // Only pass valid DB fields to the editing dialog
+                      const { _artworks, ...dbFields } = killer;
+                      setEditingKiller(dbFields);
+                    }} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(killer.id, 'killer')} disabled={deletingItem === killer.id} size="sm" variant="destructive">{deletingItem === killer.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                   </TableRow>))}
                 </TableBody></Table></div>
               )}
@@ -2806,7 +2932,10 @@ export default function AdminPage() {
                         {allSurvivors.map((survivor) => (<TableRow key={survivor.id} className="border-red-600/30">
                             <TableCell>{survivor.image_url && <img src={survivor.image_url} alt={survivor.name} className="w-12 h-12 object-cover rounded"/>}</TableCell>
                             <TableCell className="text-white">{survivor.name}</TableCell><TableCell className="text-gray-400">{survivor.id}</TableCell><TableCell className="text-gray-400">{survivor.order_num || 0}</TableCell>
-                            <TableCell><div className="flex gap-2"><Button onClick={() => setEditingSurvivor(survivor)} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(survivor.id, 'survivor')} disabled={deletingItem === survivor.id} size="sm" variant="destructive">{deletingItem === survivor.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
+                            <TableCell><div className="flex gap-2"><Button onClick={() => {
+                              const { _artworks, ...dbFields } = survivor;
+                              setEditingSurvivor(dbFields);
+                            }} size="sm" className="bg-blue-600 hover:bg-blue-700">Edit</Button><Button onClick={() => deleteCharacter(survivor.id, 'survivor')} disabled={deletingItem === survivor.id} size="sm" variant="destructive">{deletingItem === survivor.id ? 'Deleting...' : 'Delete'}</Button></div></TableCell>
                         </TableRow>))}
                     </TableBody></Table></div>
                 )}
@@ -3269,6 +3398,32 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* Blacklist Tab */}
+          {/* Floating bulk action bar */}
+          {selectedSubmissions.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-black/95 border border-red-600 rounded-lg px-6 py-3 flex items-center gap-4 shadow-2xl backdrop-blur-sm">
+              <span className="text-white font-semibold">{selectedSubmissions.size} selected</span>
+              <Button size="sm" className="bg-green-600 hover:bg-green-700" disabled={isBulkProcessing} onClick={() => bulkUpdateSubmissions('approved')}>
+                {isBulkProcessing ? 'Processing...' : 'Accept All'}
+              </Button>
+              <Dialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700" disabled={isBulkProcessing}>Decline All</Button>
+                </DialogTrigger>
+                <DialogContent className="bg-black border-red-600">
+                  <DialogHeader><DialogTitle className="text-white">Reject {selectedSubmissions.size} Submissions</DialogTitle></DialogHeader>
+                  <div className="space-y-4">
+                    <Label className="text-white">Rejection Reason (Optional)</Label>
+                    <Input value={bulkRejectReason} onChange={(e) => setBulkRejectReason(e.target.value)} placeholder="Enter reason..." className="bg-black border-red-600 text-white" />
+                    <Button onClick={() => bulkUpdateSubmissions('rejected', bulkRejectReason)} className="bg-red-600 hover:bg-red-700 w-full" disabled={isBulkProcessing}>
+                      {isBulkProcessing ? 'Processing...' : 'Confirm Rejection'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <button onClick={() => setSelectedSubmissions(new Set())} className="text-gray-400 hover:text-white ml-2 text-lg font-bold" title="Clear selection">✕</button>
+            </div>
+          )}
+
           <TabsContent value="blacklist" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
               <h2 className="text-2xl font-bold text-white mb-6">User Blacklist</h2>
@@ -3296,7 +3451,17 @@ export default function AdminPage() {
                     />
                   </div>
                 </div>
-                <div className="flex justify-end mt-3">
+                <div className="flex items-center justify-between mt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newBlacklistSuper}
+                      onChange={(e) => setNewBlacklistSuper(e.target.checked)}
+                      className="w-4 h-4 accent-red-600"
+                    />
+                    <span className="text-red-300 text-sm font-semibold">Super Blacklist</span>
+                    <span className="text-gray-400 text-xs">(blocks any name containing this username)</span>
+                  </label>
                   <Button
                     onClick={addToBlacklist}
                     disabled={isAddingToBlacklist || !newBlacklistUsername.trim()}
@@ -3323,6 +3488,7 @@ export default function AdminPage() {
                   <thead>
                     <tr className="border-b border-red-600">
                       <th className="text-left text-white p-3">Username</th>
+                      <th className="text-center text-white p-3">Super</th>
                       <th className="text-left text-white p-3">Reason</th>
                       <th className="text-left text-white p-3">Added</th>
                       <th className="text-left text-white p-3">Added By</th>
@@ -3339,7 +3505,19 @@ export default function AdminPage() {
                       )
                       .map((user) => (
                         <tr key={user.id} className="border-b border-red-600/30">
-                          <td className="text-white p-3 font-mono">{user.username}</td>
+                          <td className="text-white p-3 font-mono">
+                            {user.username}
+                            {user.is_super && <span className="ml-2 px-1.5 py-0.5 bg-red-600 text-white text-xs rounded font-sans">SUPER</span>}
+                          </td>
+                          <td className="text-center p-3">
+                            <input
+                              type="checkbox"
+                              checked={user.is_super || false}
+                              onChange={() => toggleBlacklistSuper(user.id, user.is_super || false)}
+                              className="w-4 h-4 accent-red-600 cursor-pointer"
+                              title={user.is_super ? 'Disable super blacklist' : 'Enable super blacklist'}
+                            />
+                          </td>
                           <td className="text-gray-300 p-3">{user.reason || '-'}</td>
                           <td className="text-gray-400 p-3 text-sm">
                             {new Date(user.created_at).toLocaleString()}

@@ -12,7 +12,7 @@ export default function Footer() {
             <Link
               href="https://discord.gg/GFPuzehJZs"
               target="_blank"
-              className="transition-transform duration-300 ease-in-out hover:scale-125"
+              className="p-2 transition-transform duration-300 ease-in-out hover:scale-125"
             >
               <FaDiscord size={40} className="text-[#5865F2]" />
             </Link>
@@ -20,7 +20,7 @@ export default function Footer() {
             <Link
               href="https://x.com/SLeNDeR_KiLL3R"
               target="_blank"
-              className="transition-transform duration-300 ease-in-out hover:scale-125"
+              className="p-2 transition-transform duration-300 ease-in-out hover:scale-125"
             >
               <FaTwitter size={40} className="text-blue-400"/>
             </Link>
@@ -28,7 +28,7 @@ export default function Footer() {
             <Link
               href="https://www.reddit.com/user/SLeNDeR_KiLLeR/"
               target="_blank"
-              className="transition-transform duration-300 ease-in-out hover:scale-125"
+              className="p-2 transition-transform duration-300 ease-in-out hover:scale-125"
             >
               <FaReddit size={40} className="text-orange-500" />
             </Link>

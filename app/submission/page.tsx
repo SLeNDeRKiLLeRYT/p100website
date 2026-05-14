@@ -14,6 +14,16 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import DOMPurify from 'dompurify';
 
+const normalizeLeet = (str: string): string => {
+  const map: Record<string, string> = {
+    '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's',
+    '7': 't', '8': 'b', '9': 'g', '@': 'a', '!': 'i',
+    '$': 's', '+': 't', '(': 'c', '|': 'l', '{': 'c',
+    '[': 'c', '<': 'c', '}': 'j',
+  };
+  return str.toLowerCase().split('').map(c => map[c] || c).join('');
+};
+
 // Safe sanitization for comments - allows emojis, symbols, but prevents XSS
 const sanitizeComment = (comment: string): string => {
   if (typeof window !== 'undefined' && comment) {
@@ -187,15 +197,31 @@ export default function SubmissionPage() {
     setIsSubmitting(true);
     setMessage('');
     try {
-      // Check if user is blacklisted
-      const { data: blacklistData, error: blacklistError } = await supabase
+      // Check if user is blacklisted (exact match)
+      const { data: blacklistData } = await supabase
         .from('blacklisted_users')
         .select('username')
         .eq('username', sanitizedUsername.toLowerCase())
         .single();
-      
+
       if (blacklistData) {
-        setMessage('Unable to submit. Please contact support.');
+        setMessage('Unable to submit. Please contact support: https://discord.gg/GFPuzehJZs');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Check super blacklist (partial/contains match)
+      const { data: superBlacklist } = await supabase
+        .from('blacklisted_users')
+        .select('username')
+        .eq('is_super', true);
+
+      const normalizedSubmitted = normalizeLeet(sanitizedUsername.toLowerCase());
+      if (superBlacklist && superBlacklist.some(entry => {
+        const normalizedEntry = normalizeLeet(entry.username);
+        return sanitizedUsername.toLowerCase().includes(entry.username) || normalizedSubmitted.includes(normalizedEntry);
+      })) {
+        setMessage('Unable to submit. Please contact support: https://discord.gg/GFPuzehJZs');
         setIsSubmitting(false);
         return;
       }
