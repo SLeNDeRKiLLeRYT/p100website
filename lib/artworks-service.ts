@@ -1,7 +1,8 @@
 // lib/artworks-service.ts
 // Service helpers for new artist_artworks mapping.
 
-import supabase, { createAdminClient } from './supabase-client';
+import supabase from './supabase-client';
+import { createAdminClient } from './supabase-admin';
 
 export interface ArtworkUsage {
   usage_id: string;

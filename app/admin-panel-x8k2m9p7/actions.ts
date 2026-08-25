@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createAdminClient } from '@/lib/supabase-client';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { 
   getArtists as getArtistsService, 
   createArtist as createArtistService, 

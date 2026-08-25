@@ -1,6 +1,8 @@
 // lib/artists-service.ts
 
-import { SupabaseClient } from '@supabase/supabase-js';
+// Structural type: satisfied by a real SupabaseClient AND by the admin proxy
+// in lib/admin-proxy.ts, so these helpers work on the server and in the panel.
+export type ArtistsDbClient = { from: (table: string) => any };
 // FIX: Import the default singleton instance.
 // We can name it whatever we want here, but `supabase` is standard.
 import supabase from './supabase-client';
@@ -26,7 +28,7 @@ export interface ArtistInsert {
  * Fetches artists from the database.
  * @param supabaseClient - The Supabase client instance to use (can be public or admin).
  */
-export async function getArtists(supabaseClient: SupabaseClient): Promise<Artist[]> {
+export async function getArtists(supabaseClient: ArtistsDbClient): Promise<Artist[]> {
   const { data, error } = await supabaseClient
     .from('artists')
     .select('*')
@@ -45,7 +47,7 @@ export async function getArtists(supabaseClient: SupabaseClient): Promise<Artist
  * @param supabaseClient - The Supabase admin client instance.
  * @param artistData - The data for the new artist.
  */
-export async function createArtist(supabaseClient: SupabaseClient, artistData: ArtistInsert) {
+export async function createArtist(supabaseClient: ArtistsDbClient, artistData: ArtistInsert) {
   const { data, error } = await supabaseClient
     .from('artists')
     .insert([artistData]) // Ensure it's an array for consistency
@@ -66,7 +68,7 @@ export async function createArtist(supabaseClient: SupabaseClient, artistData: A
  * @param artistId - The ID of the artist to update.
  * @param artistData - The new data for the artist.
  */
-export async function updateArtist(supabaseClient: SupabaseClient, artistId: string, artistData: Partial<ArtistInsert>) {
+export async function updateArtist(supabaseClient: ArtistsDbClient, artistId: string, artistData: Partial<ArtistInsert>) {
     const { data, error } = await supabaseClient
         .from('artists')
         .update(artistData)
@@ -87,7 +89,7 @@ export async function updateArtist(supabaseClient: SupabaseClient, artistId: str
  * @param supabaseClient - The Supabase admin client instance.
  * @param artistId - The ID of the artist to delete.
  */
-export async function deleteArtist(supabaseClient: SupabaseClient, artistId: string) {
+export async function deleteArtist(supabaseClient: ArtistsDbClient, artistId: string) {
   const { error } = await supabaseClient.from('artists').delete().eq('id', artistId);
 
   if (error) {
