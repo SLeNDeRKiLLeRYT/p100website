@@ -724,8 +724,8 @@ export default function AdminPanelClient() {
     try {
       const supabaseAdmin = createAdminClient();
       const [killersRes, survivorsRes, artworksRes] = await Promise.all([
-        supabase.from('killers').select('id, name, order').order('name'),
-        supabase.from('survivors').select('id, name, order_num').order('name'),
+        supabase.from('killers').select('id, name, order, image_url, created_at, background_credit_name, background_credit_url').order('name'),
+        supabase.from('survivors').select('id, name, order_num, image_url, created_at, background_credit_name, background_credit_url').order('name'),
         supabaseAdmin.from('v_character_artworks').select('*')
       ]);
       if (killersRes.error) throw killersRes.error;
