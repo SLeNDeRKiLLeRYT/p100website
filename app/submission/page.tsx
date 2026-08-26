@@ -103,6 +103,35 @@ function CustomDropdown({ characters, value, onChange, placeholder }: CustomDrop
   );
 }
 
+// Renders [label](url) markdown-style links inside an otherwise plain-text message.
+// External links open in a new tab; internal ones (starting with /) navigate normally.
+const renderMessage = (text: string): React.ReactNode[] => {
+  const parts: React.ReactNode[] = [];
+  const pattern = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+  let lastIndex = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    const [, label, href] = match;
+    const isExternal = /^https?:\/\//i.test(href);
+    parts.push(
+      <a
+        key={key++}
+        href={href}
+        {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        className="underline font-bold hover:opacity-80"
+      >
+        {label}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+};
+
 export default function SubmissionPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
@@ -205,7 +234,7 @@ export default function SubmissionPage() {
         .single();
 
       if (blacklistData) {
-        setMessage('Unable to submit. Please contact support: https://discord.gg/GFPuzehJZs');
+        setMessage('Unable to submit. Please contact [support](https://discord.com/invite/GFPuzehJZs).');
         setIsSubmitting(false);
         return;
       }
@@ -221,7 +250,7 @@ export default function SubmissionPage() {
         const normalizedEntry = normalizeLeet(entry.username);
         return sanitizedUsername.toLowerCase().includes(entry.username) || normalizedSubmitted.includes(normalizedEntry);
       })) {
-        setMessage('Unable to submit. Please contact support: https://discord.gg/GFPuzehJZs');
+        setMessage('Unable to submit. Please contact [support](https://discord.com/invite/GFPuzehJZs).');
         setIsSubmitting(false);
         return;
       }
@@ -230,53 +259,49 @@ export default function SubmissionPage() {
       const targetKillerId = formData.characterType === 'killer' ? formData.characterId : null;
       const targetSurvivorId = formData.characterType === 'survivor' ? formData.characterId : null;
 
-      // Step 2: Check for existing approved submissions for this character.
-      // If approved exists, block the submission (cannot override an already approved P100).
-      let approvedQuery = supabase
+      // Step 2: Block if this user already has an approved OR pending submission
+      // for this character. One query covers both so it is a single round-trip.
+      //
+      // NOTE: this used to also DELETE the user's previous pending/rejected rows.
+      // That delete ran with the public anon key, which meant anyone could delete
+      // anyone else's submission, so the permission was removed. Blocking up front
+      // is both safer and clearer to the submitter than silently replacing.
+      let existingQuery = supabase
         .from('p100_submissions')
         .select('id, status, killer_id, survivor_id, username, legacy')
-        .eq('status', 'approved')
+        .in('status', ['approved', 'pending'])
         .eq('legacy', false)
         .eq('username', sanitizedUsername);
 
       if (targetKillerId) {
-        approvedQuery = approvedQuery.eq('killer_id', targetKillerId);
+        existingQuery = existingQuery.eq('killer_id', targetKillerId);
       } else if (targetSurvivorId) {
-        approvedQuery = approvedQuery.eq('survivor_id', targetSurvivorId);
+        existingQuery = existingQuery.eq('survivor_id', targetSurvivorId);
       }
 
-      const { data: approvedData, error: approvedError } = await approvedQuery.limit(1);
-      if (approvedError) {
-        console.warn('Approved check failed (continuing to allow submission):', approvedError.message);
+      const { data: existingData, error: existingError } = await existingQuery.limit(5);
+      if (existingError) {
+        console.warn('Existing-submission check failed (continuing to allow submission):', existingError.message);
       }
 
-      if (approvedData && approvedData.length > 0) {
-        console.info('[P100 Submission] Blocked: User already has approved submission for this character');
-        setMessage('You already have an approved P100 for this character.');
+      const alreadyApproved = existingData?.some(row => row.status === 'approved');
+      const alreadyPending = existingData?.some(row => row.status === 'pending');
+
+      if (alreadyApproved) {
+        console.info('[P100 Submission] Blocked: already approved for this character');
+        setMessage('You already have a p100 logged on the website for this character. Please contact [support](https://discord.com/invite/GFPuzehJZs) in case a mistake was made.');
         setIsSubmitting(false);
         return;
       }
 
-      // Step 3: Delete any previous pending/rejected submissions for this username + character
-      // This ensures only the most recent submission is kept
-      let deleteQuery = supabase
-        .from('p100_submissions')
-        .delete()
-        .eq('username', sanitizedUsername)
-        .eq('legacy', false);
-
-      if (targetKillerId) {
-        deleteQuery = deleteQuery.eq('killer_id', targetKillerId);
-      } else if (targetSurvivorId) {
-        deleteQuery = deleteQuery.eq('survivor_id', targetSurvivorId);
+      if (alreadyPending) {
+        console.info('[P100 Submission] Blocked: already pending for this character');
+        setMessage(`You already have a p100 pending on the website for this character. Please check your submissions [here](/submission/status?username=${encodeURIComponent(sanitizedUsername)}).`);
+        setIsSubmitting(false);
+        return;
       }
 
-      const { error: deleteError } = await deleteQuery;
-      if (deleteError) {
-        console.warn('Failed to delete previous submissions:', deleteError.message);
-      }
-
-      // Step 4: Proceed with normal upload & insertion.
+      // Step 3: Proceed with normal upload & insertion.
       const fileExt = formData.screenshot.name.split('.').pop()?.toLowerCase();
       if (!fileExt) throw new Error('Invalid file type');
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
@@ -479,18 +504,18 @@ export default function SubmissionPage() {
                 {isSubmitting ? 'Submitting...' : 'Submit P100'}
             </button>
           </form>
+          {/* Every setMessage() in this file is a validation failure or a block.
+              Success opens the dialog instead, so this box is never a success state. */}
           {message && (
             <div
               className={`mt-6 p-4 rounded-lg max-w-lg mx-auto font-mono text-sm tracking-wide
-                ${message.startsWith('Denied:')
+                ${message.startsWith('Denied:') || message.includes('Error')
                   ? 'bg-red-900/70 border border-red-600 text-red-200'
-                  : message.includes('Error')
-                    ? 'bg-red-900/50 border border-red-500 text-red-200'
-                    : 'bg-green-900/50 border border-green-500 text-green-200'}
+                  : 'bg-amber-900/50 border border-amber-500 text-amber-100'}
               `}
-              role={message.startsWith('Denied:') || message.includes('Error') ? 'alert' : undefined}
+              role="alert"
             >
-              {message}
+              {renderMessage(message)}
             </div>
           )}
         </div>

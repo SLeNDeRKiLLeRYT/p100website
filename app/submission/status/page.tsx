@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,8 @@ interface Suggestion {
   username: string;
 }
 
-export default function SubmissionStatusPage() {
+function SubmissionStatusInner() {
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [committedUsername, setCommittedUsername] = useState(""); // last searched username
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -179,6 +181,26 @@ export default function SubmissionStatusPage() {
     }
   };
 
+  // Prefill and auto-run when arriving from the submission page with ?username=
+  useEffect(() => {
+    const fromUrl = searchParams.get("username");
+    if (!fromUrl) return;
+    selectionMade.current = true; // suppress the suggestions dropdown
+    setUsername(fromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Run the lookup once the prefilled username has landed in state
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current) return;
+    if (!searchParams.get("username")) return;
+    if (!username.trim()) return;
+    autoRan.current = true;
+    void checkStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username, searchParams]);
+
   const getCharacterName = (submission: Submission) => {
     if (submission.killer_id) return `${killerNames[submission.killer_id] || submission.killer_id}`;
     if (submission.survivor_id) return `${survivorNames[submission.survivor_id] || submission.survivor_id}`;
@@ -267,3 +289,13 @@ export default function SubmissionStatusPage() {
     </BackgroundWrapper>
   );
 }
+
+
+export default function SubmissionStatusPage() {
+  return (
+    <Suspense fallback={null}>
+      <SubmissionStatusInner />
+    </Suspense>
+  );
+}
+
