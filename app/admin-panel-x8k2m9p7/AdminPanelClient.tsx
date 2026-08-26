@@ -938,28 +938,25 @@ export default function AdminPanelClient() {
         }
       }
 
-      // Upsert into mapping table
-      if (artistId) {
-        const { error } = await supabaseAdmin
-          .from('artwork_artist_mappings')
-          .upsert({
-            artwork_url: publicUrl,
-            artist_id: artistId,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'artwork_url'
-          });
+      // Artist credit lives on the `artworks` row itself.
+      // The old `artwork_artist_mappings` table does not exist in this database,
+      // so every write here used to throw. This mirrors the working upsert used
+      // by the Artworks tab.
+      const selectedArtist = artistId ? artists.find(a => a.id === artistId) : null;
+      const { error } = await supabaseAdmin
+        .from('artworks')
+        .upsert({
+          artwork_url: publicUrl,
+          artist_name: selectedArtist?.name ?? null,
+          artist_url: selectedArtist ? (selectedArtist as any).url ?? null : null,
+          platform: selectedArtist ? (selectedArtist as any).platform ?? null : null,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'artwork_url',
+          ignoreDuplicates: false
+        });
 
-        if (error) throw error;
-      } else {
-        // Remove mapping if no artist selected
-        const { error } = await supabaseAdmin
-          .from('artwork_artist_mappings')
-          .delete()
-          .eq('artwork_url', publicUrl);
-
-        if (error && error.code !== 'PGRST116') throw error; // Ignore "not found" errors
-      }
+      if (error) throw error;
 
       // Also update background_credit fields if this is a background image
       if (usage.fieldType === 'background') {
