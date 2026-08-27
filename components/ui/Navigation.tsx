@@ -10,10 +10,11 @@ interface NavigationProps {
   hideKillers?: boolean;
   hideSurvivors?: boolean;
   hideCredits?: boolean;
+  hideHallOfFame?: boolean;
   hideSearch?: boolean;
 }
 
-export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideCredits, hideSearch }: NavigationProps) {
+export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideCredits, hideSearch, hideHallOfFame }: NavigationProps) {
   const pathname = usePathname();
   
   return (
@@ -37,6 +38,12 @@ export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideC
         </Link>
       )}
       
+      {!hideHallOfFame && (
+        <Link href="/hall-of-fame" className={`nav-button ${pathname === "/hall-of-fame" ? "active" : ""}`}>
+          HALL OF FAME
+        </Link>
+      )}
+
       {!hideCredits && (
         <Link href="/credits" className={`nav-button ${pathname === "/credits" ? "active" : ""}`}>
           CREDITS

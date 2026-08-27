@@ -144,6 +144,7 @@ export default function SubmissionPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [submittedUsername, setSubmittedUsername] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -321,7 +322,8 @@ export default function SubmissionPage() {
   const { error: submitError } = await supabase.from('p100_submissions').insert([submissionData]);
       if (submitError) throw new Error('Failed to submit P100: ' + submitError.message);
       
-      // Reset form
+      // Reset form (capture the name first so the dialog can link to their submissions)
+      setSubmittedUsername(sanitizedUsername);
       setFormData({ username: '', characterType: 'killer', characterId: '', screenshot: null, comment: ''});
       const fileInput = document.getElementById('screenshot') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
@@ -416,7 +418,7 @@ export default function SubmissionPage() {
             <h2 className="text-2xl font-mono mb-6 text-red-400">READ BEFORE SUBMITTING:</h2>
             <div className="space-y-6 text-gray-100">
                 <p className="text-lg">So, You made it all the way here. Welcome.</p>
-                <p>As long as this website is online, I am taking submissions if you want to add your name to any list, if you have a P100. I accept them ONLY through this form or Discord, but before you submit, please note I need your submission to meet some requirements:</p>
+                <p>As long as this website is online, I am taking submissions if you want to add your name to any list, if you have a P100. I accept them ONLY through this form, but before you submit, please note I need your submission to meet some requirements:</p>
                 <div className="bg-red-900/30 border border-red-500 rounded-lg p-6">
                     <h3 className="text-xl font-mono mb-4 text-red-300">Requirements:</h3>
                     <ul className="space-y-3 list-disc list-inside">
@@ -529,18 +531,18 @@ export default function SubmissionPage() {
             <DialogDescription className="text-gray-300 text-base pt-4">
               Your P100 submission has been received and will be reviewed by an admin.
               <br /><br />
-              You can check the status of your submission on the status page.
+              You can check your submission and follow its progress on the submission status page — the button below takes you straight to yours.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 mt-4">
             <Button
               onClick={() => {
                 setShowSuccessDialog(false);
-                router.push('/submission/status');
+                router.push(`/submission/status?username=${encodeURIComponent(submittedUsername)}`);
               }}
               className="flex-1 bg-green-600 hover:bg-green-700 text-white"
             >
-              Check Status
+              Check My Submission
             </Button>
             <Button
               onClick={() => setShowSuccessDialog(false)}

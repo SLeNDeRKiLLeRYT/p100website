@@ -504,7 +504,7 @@ export default function AdminPanelClient() {
     );
   };
 
-  const [submissionSort, setSubmissionSort] = useState<'newest' | 'oldest'>('newest');
+  const [submissionSort, setSubmissionSort] = useState<'newest' | 'oldest'>('oldest');
   const [playerSearchTerm, setPlayerSearchTerm] = useState('');
   const [playerSort, setPlayerSort] = useState<'added_at_desc' | 'added_at_asc' | 'username_asc' | 'username_desc' | 'character_asc' | 'character_desc'>('added_at_desc');
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('all');
@@ -2339,7 +2339,6 @@ export default function AdminPanelClient() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="bg-black border border-red-600">
             <TabsTrigger value="submissions" className="data-[state=active]:bg-red-600">Submissions</TabsTrigger>
-            <TabsTrigger value="quick-artwork" className="data-[state=active]:bg-red-600">Add Artwork</TabsTrigger>
             <TabsTrigger value="quick-character" className="data-[state=active]:bg-red-600">Add Character</TabsTrigger>
             <TabsTrigger value="killers-table" className="data-[state=active]:bg-red-600">Killers</TabsTrigger>
             <TabsTrigger value="survivors-table" className="data-[state=active]:bg-red-600">Survivors</TabsTrigger>
@@ -2607,144 +2606,6 @@ export default function AdminPanelClient() {
             </div>
           </TabsContent>
 
-          <TabsContent value="quick-artwork" className="space-y-6">
-            <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">
-              <h2 className="text-2xl font-bold text-white mb-6">Quick Add Artwork</h2>
-              <div className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
-                  <h3 className="text-blue-300 font-semibold mb-2">How to Use:</h3>
-                  <ol className="text-blue-100 text-sm space-y-1 list-decimal list-inside">
-                    <li>Upload your artwork file</li>
-                    <li>Select which character page it belongs to</li>
-                    <li>Select the artist from the database</li>
-                    <li>Choose where to place it (Gallery, Header, or Legacy Header)</li>
-                    <li>Click "Upload Artwork" - Done!</li>
-                  </ol>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="artwork-upload" className="text-white block mb-2">Artwork File *</Label>
-                      <input
-                        type="file"
-                        id="artwork-upload"
-                        accept="image/*"
-                        onChange={(e) => setArtworkUploadForm({
-                          ...artworkUploadForm,
-                          artworkFile: e.target.files?.[0] || null
-                        })}
-                        className="w-full p-3 border border-red-600 rounded-lg bg-black text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-red-600 file:text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-white block mb-2">Character *</Label>
-                      <Select 
-                        value={artworkUploadForm.characterId} 
-                        onValueChange={(value) => {
-                          const isKiller = allKillers.some(k => k.id === value);
-                          const isSurvivor = allSurvivors.some(s => s.id === value);
-                          setArtworkUploadForm({
-                            ...artworkUploadForm,
-                            characterId: value,
-                            characterType: isKiller ? 'killer' : 'survivor'
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="bg-black border-red-600 text-white">
-                          <SelectValue placeholder="Select character..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-black border-red-600">
-                          <SelectGroup>
-                            <SelectLabel>Killers</SelectLabel>
-                            {allKillers.map(k => (
-                              <SelectItem key={k.id} value={k.id}>{k.name}</SelectItem>
-                            ))}
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Survivors</SelectLabel>
-                            {allSurvivors.map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-white block mb-2">Artist *</Label>
-                      <Select 
-                        value={artworkUploadForm.artistId} 
-                        onValueChange={(value) => {
-                          const selectedArtist = artists.find(a => a.id === value);
-                          setArtworkUploadForm({
-                            ...artworkUploadForm,
-                            artistId: value,
-                            artistName: selectedArtist?.name || ''
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="bg-black border-red-600 text-white">
-                          <SelectValue placeholder="Select artist..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-black border-red-600">
-                          {artists.map(artist => (
-                            <SelectItem key={artist.id} value={artist.id}>
-                              {artist.name}
-                              <span className="text-gray-400 ml-2">({artist.platform})</span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label className="text-white block mb-2">Placement</Label>
-                      <Select 
-                        value={artworkUploadForm.placement} 
-                        onValueChange={(value: 'gallery' | 'header' | 'legacy_header') => 
-                          setArtworkUploadForm({ ...artworkUploadForm, placement: value })
-                        }
-                      >
-                        <SelectTrigger className="bg-black border-red-600 text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-black border-red-600">
-                          <SelectItem value="gallery">Gallery (Sidebar)</SelectItem>
-                          <SelectItem value="header">Header Image</SelectItem>
-                          <SelectItem value="legacy_header">Legacy Header</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-
-                {artworkUploadForm.artistId && (
-                  <div className="bg-green-900/20 border border-green-500 rounded-lg p-4">
-                    <h4 className="text-green-300 font-semibold mb-2">Selected Artist:</h4>
-                    <div className="text-green-100">
-                      <p><strong>Name:</strong> {artworkUploadForm.artistName}</p>
-                      <p><strong>Platform:</strong> {artists.find(a => a.id === artworkUploadForm.artistId)?.platform}</p>
-                      <p><strong>URL:</strong> <a href={artists.find(a => a.id === artworkUploadForm.artistId)?.url} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:underline">{artists.find(a => a.id === artworkUploadForm.artistId)?.url}</a></p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="text-center pt-4">
-                  <Button
-                    onClick={uploadArtworkToCharacter}
-                    disabled={uploadingArtwork || !artworkUploadForm.artworkFile || !artworkUploadForm.characterId || !artworkUploadForm.artistId}
-                    className="bg-green-600 hover:bg-green-700 px-8 py-3"
-                  >
-                    {uploadingArtwork ? 'Uploading Artwork...' : 'Upload Artwork'}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
 
           <TabsContent value="quick-character" className="space-y-6">
             <div className="bg-black/80 backdrop-blur-sm border border-red-600 rounded-lg p-6">

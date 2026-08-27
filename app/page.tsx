@@ -34,12 +34,12 @@ export default function Home() {
             <br className="hidden md:block" />
             If you are reading this, the list(s) are still being updated ! Thanks to everyone who helped keep them up to date, it&apos;s a lot of work.
             <br className="hidden md:block" />
-            To check out the lists, simply click on <Link href="/killers" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">Killers</Link> or <Link href="/survivors" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">Survivors</Link> above to have a complete list of the game&apos;s roster ! From there, you can choose which list you want to see.
+            To check out the lists, simply click on <Link href="/killers" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">KILLERS</Link> or <Link href="/survivors" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">SURVIVORS</Link> above to have a complete list of the game&apos;s roster ! From there, you can choose which list you want to see.
           </p>
           
           <div className="faq-section">
             <h2 className="text-2xl md:text-3xl lg:text-4xl mb-4 md:mb-6">
-              Want to add a P100, or submitted one? Right below :
+              Want to add a p100, or check your submissions?
             </h2>
 
             <div className="flex flex-col sm:flex-row justify-center gap-6 text-center mb-8 md:mb-12">
@@ -77,6 +77,12 @@ export default function Home() {
                   <HighlightOfTheDay />
                 </TabsContent>
               </Tabs>
+
+              <div className="text-center mt-6">
+                <Link href="/hall-of-fame" className="nav-button-large inline-block rounded-lg">
+                  🏆 HALL OF FAME
+                </Link>
+              </div>
             </div>
             
             <div className="bg-black/40 border-2 border-red-600/50 rounded-lg p-6 md:p-8 mb-8 md:mb-12 backdrop-blur-sm">
@@ -113,7 +119,7 @@ export default function Home() {
                   <div>
                     <p className="faq-question">- Can I help with the website?</p>
                     <p className="faq-answer">
-                      I do not accept financial help, however the best thing you could do, would be to share the website so we can reach more players and add more p100s on the list &lt;3 any p100 added is a victory !
+                      I accept donations <a href="https://streamelements.com/slender_kill3r/tip" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">HERE</a>, however the best (and free !) thing you can do, would be to share the website so we can reach more players and add more p100s on the list &lt;3 any p100 added is a victory !
                     </p>
                   </div>
                   
