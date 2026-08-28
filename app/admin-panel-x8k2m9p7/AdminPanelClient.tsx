@@ -918,6 +918,63 @@ export default function AdminPanelClient() {
   };
 
   // Update artist for an artwork using mapping table
+  /**
+   * If `publicUrl` is a character's background, mirror the artist onto that
+   * character's background_credit_name / background_credit_url — the columns the
+   * public character page actually renders.
+   *
+   * Looks the character up in the database rather than in local state, because
+   * allKillers/allSurvivors derive background_image_url from the artworks view
+   * only, and some characters store it directly on their own row instead.
+   *
+   * Returns the character id it credited, or null if this artwork is not a background.
+   */
+  const syncBackgroundCredit = async (
+    publicUrl: string,
+    artist: { name?: string | null; url?: string | null } | null
+  ): Promise<string | null> => {
+    try {
+      const supabaseAdmin = createAdminClient();
+      const credit = {
+        background_credit_name: artist?.name || null,
+        background_credit_url: artist?.url || null,
+      };
+
+      for (const table of ['killers', 'survivors'] as const) {
+        // a) background stored directly on the character row
+        const { data: direct } = await supabaseAdmin
+          .from(table)
+          .select('id')
+          .eq('background_image_url', publicUrl)
+          .limit(1);
+
+        let targetId: string | null = direct && direct.length ? direct[0].id : null;
+
+        // b) or registered in the artworks system as this character's background
+        if (!targetId) {
+          const { data: viaArtworks } = await supabaseAdmin
+            .from('v_character_artworks')
+            .select('character_id')
+            .eq('artwork_url', publicUrl)
+            .eq('usage_type', 'background')
+            .eq('character_type', table === 'killers' ? 'killer' : 'survivor')
+            .limit(1);
+          targetId = viaArtworks && viaArtworks.length ? viaArtworks[0].character_id : null;
+        }
+
+        if (targetId) {
+          const { error } = await supabaseAdmin.from(table).update(credit).eq('id', targetId);
+          if (error) throw error;
+          return targetId;
+        }
+      }
+      return null;
+    } catch (e) {
+      console.error('Failed to sync background credit:', e);
+      return null;
+    }
+  };
+
   const updateArtworkArtist = async (publicUrl: string, artistId: string | null) => {
     setUpdatingArtist(publicUrl);
     try {
@@ -960,18 +1017,8 @@ export default function AdminPanelClient() {
 
       // Also update background_credit fields if this is a background image
       if (usage.fieldType === 'background') {
-        const table = usage.characterType === 'killer' ? 'killers' : 'survivors';
         const artist = artistId ? artists.find(a => a.id === artistId) : null;
-        
-        const { error: bgError } = await supabaseAdmin
-          .from(table)
-          .update({
-            background_credit_name: artist?.name || null,
-            background_credit_url: artist?.url || null
-          })
-          .eq('id', usage.characterId);
-
-        if (bgError) console.error('Error updating background credit:', bgError);
+        await syncBackgroundCredit(publicUrl, artist ? { name: artist.name, url: (artist as any).url } : null);
       }
 
       toast({ 
@@ -3330,11 +3377,20 @@ export default function AdminPanelClient() {
                                             return;
                                           }
                                           
+                                          // If this artwork is a character's background, mirror the
+                                          // artist onto the credit shown on that character's page.
+                                          const creditedCharacter = await syncBackgroundCredit(
+                                            artwork.artwork_url,
+                                            selectedArtist ? { name: selectedArtist.name, url: (selectedArtist as any).url } : null
+                                          );
+
                                           // Update local state ONLY - NO RELOAD
                                           setArtworkArtists(prev => ({ ...prev, [artwork.artwork_url]: selectedArtist?.name || null }));
                                           toast({ 
-                                            title: 'Updated', 
-                                            description: selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared'
+                                            title: creditedCharacter ? 'Updated + background credit' : 'Updated', 
+                                            description: creditedCharacter
+                                              ? `${selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared'} — background credit updated on ${creditedCharacter}`
+                                              : (selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared')
                                           });
                                           setUpdatingArtist(null);
                                         } catch (err) {
