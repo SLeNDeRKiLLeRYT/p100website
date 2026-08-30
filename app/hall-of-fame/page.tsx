@@ -1,5 +1,13 @@
 import Navigation from '@/components/ui/Navigation';
 import BackgroundWrapper from '@/components/BackgroundWrapper';
+import CreatorShowcase from '@/components/CreatorShowcase';
+import Leaderboard from '@/components/Leaderboard';
+import {
+  getLeaderboard,
+  getCreatorShowcase,
+  CREATOR_USERNAME,
+  LEADERBOARD_LIMIT,
+} from '@/lib/leaderboard';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,7 +17,12 @@ export const metadata = {
   description: 'The players with the most P100s in Dead by Daylight.',
 };
 
-export default function HallOfFamePage() {
+export default async function HallOfFamePage() {
+  const [entries, creatorPortraits] = await Promise.all([
+    getLeaderboard(LEADERBOARD_LIMIT),
+    getCreatorShowcase(),
+  ]);
+
   return (
     <BackgroundWrapper>
       <div className="container mx-auto px-4 pt-8">
@@ -21,32 +34,21 @@ export default function HallOfFamePage() {
           HALL OF FAME
         </h1>
 
-        {/* INTRO — placeholder until SLeNDeR_KiLLeR supplies the final copy */}
+        {/* INTRO — placeholder until SLeNDeR_KiLLeR supplies the real copy */}
         <div className="content-text max-w-3xl mx-auto mb-12 md:mb-16">
           <p className="text-base md:text-lg leading-relaxed text-center text-gray-300">
-            Intro text goes here — this is placeholder copy so the page can be
-            reviewed. Replace with the real introduction.
+            Intro text goes here — placeholder copy so the page can be reviewed.
           </p>
         </div>
 
-        {/* CREATOR SHOWCASE — item 9 */}
-        <section className="mb-12 md:mb-16">
-          <div className="bg-black/40 border-2 border-red-600/50 rounded-lg p-6 md:p-8 backdrop-blur-sm text-center">
-            <h2 className="text-2xl md:text-3xl font-mono mb-2">
-              SLeNDeR_KiLLeR, creator of the website
-            </h2>
-            <p className="text-gray-400 text-sm">Showcase coming next.</p>
-          </div>
-        </section>
+        <CreatorShowcase username={CREATOR_USERNAME} portraits={creatorPortraits} />
 
-        {/* LEADERBOARD — items 10 &amp; 11 */}
         <section>
-          <h2 className="text-3xl md:text-4xl font-mono text-center mb-6 md:mb-8">
-            MOST P100s
-          </h2>
-          <div className="bg-black/40 border border-red-600/30 rounded-lg p-8 text-center text-gray-400">
-            Leaderboard coming next.
-          </div>
+          <h2 className="text-3xl md:text-4xl font-mono text-center mb-2">MOST P100s</h2>
+          <p className="text-center text-gray-400 text-sm font-mono mb-6 md:mb-8">
+            Top {LEADERBOARD_LIMIT} — tied players share a place
+          </p>
+          <Leaderboard entries={entries} />
         </section>
       </main>
     </BackgroundWrapper>
