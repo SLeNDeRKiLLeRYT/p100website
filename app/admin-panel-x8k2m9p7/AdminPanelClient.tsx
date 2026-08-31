@@ -185,11 +185,8 @@ export default function AdminPanelClient() {
   // --- VIP (item 15) ---
   const [vipUsers, setVipUsers] = useState<any[]>([]);
   const [vipSearch, setVipSearch] = useState('');
-  const [newVipUsername, setNewVipUsername] = useState('');
-  const [newVipTier, setNewVipTier] = useState<number>(1);
-  const [newVipReason, setNewVipReason] = useState('');
-  const [isAddingVip, setIsAddingVip] = useState(false);
   const [updatingVipId, setUpdatingVipId] = useState<string | null>(null);
+  const [vipSort, setVipSort] = useState<'tier_desc' | 'tier_asc' | 'name_asc' | 'name_desc'>('tier_desc');
   
   // UI State
   const [activeTab, setActiveTab] = useState('submissions');
@@ -590,6 +587,11 @@ export default function AdminPanelClient() {
     placement: 'gallery'
   });
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
+
+  // Keep the VIP list loaded so the per-player tickboxes show current state.
+  useEffect(() => {
+    if (isAuthenticated) void fetchVipUsers();
+  }, [isAuthenticated, fetchVipUsers]);
 
   // Initial Auth Check and Data Fetch
   useEffect(() => {
@@ -1313,45 +1315,6 @@ export default function AdminPanelClient() {
     }
   }, [toast]);
 
-  const addVip = useCallback(async () => {
-    if (!newVipUsername.trim()) {
-      toast({ title: 'Error', description: 'Username is required', variant: 'destructive' });
-      return;
-    }
-    setIsAddingVip(true);
-    try {
-      const supabase = createAdminClient();
-      const { error } = await supabase
-        .from('vip_users')
-        .insert([{
-          username: newVipUsername.trim(),
-          tier: newVipTier,
-          reason: newVipReason.trim() || null,
-          created_by: 'admin',
-        }]);
-
-      if (error) {
-        if (error.code === '23505') {
-          toast({ title: 'Error', description: 'That player is already a VIP. Change their tier instead.', variant: 'destructive' });
-        } else {
-          throw error;
-        }
-        return;
-      }
-
-      toast({ title: 'Success', description: `${newVipUsername.trim()} added as VIP ${newVipTier}` });
-      setNewVipUsername('');
-      setNewVipTier(1);
-      setNewVipReason('');
-      await fetchVipUsers();
-    } catch (e: any) {
-      console.error('Error adding VIP', e);
-      toast({ title: 'Error', description: 'Failed to add VIP', variant: 'destructive' });
-    } finally {
-      setIsAddingVip(false);
-    }
-  }, [newVipUsername, newVipTier, newVipReason, toast, fetchVipUsers]);
-
   const updateVipTier = useCallback(async (id: string, tier: number) => {
     setUpdatingVipId(id);
     try {
@@ -1367,6 +1330,46 @@ export default function AdminPanelClient() {
       setUpdatingVipId(null);
     }
   }, [toast]);
+
+  /** Current tier for a username, or null. Case-insensitive. */
+  const vipTierOf = useCallback((username: string | null | undefined): number | null => {
+    if (!username) return null;
+    const hit = vipUsers.find(v => String(v.username).toLowerCase() === username.trim().toLowerCase());
+    return hit ? Number(hit.tier) : null;
+  }, [vipUsers]);
+
+  /**
+   * Set or clear VIP for a username. VIP lives on the username, so this is what
+   * the per-player tickboxes call: ticking on any one of that player's rows
+   * applies to every character they own.
+   */
+  const setVipForUsername = useCallback(async (username: string, tier: number | null) => {
+    const uname = (username || '').trim();
+    if (!uname) return;
+    try {
+      const supabase = createAdminClient();
+      const existing = vipUsers.find(v => String(v.username).toLowerCase() === uname.toLowerCase());
+
+      if (tier === null) {
+        if (existing) {
+          const { error } = await supabase.from('vip_users').delete().eq('id', existing.id);
+          if (error) throw error;
+        }
+      } else if (existing) {
+        const { error } = await supabase.from('vip_users').update({ tier }).eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('vip_users')
+          .insert([{ username: uname, tier, created_by: 'admin' }]);
+        if (error) throw error;
+      }
+      await fetchVipUsers();
+    } catch (e: any) {
+      console.error('Error setting VIP', e);
+      toast({ title: 'Error', description: 'Failed to update VIP status', variant: 'destructive' });
+    }
+  }, [vipUsers, fetchVipUsers, toast]);
 
   const removeVip = useCallback(async (id: string, username: string) => {
     if (!confirm(`Remove ${username} from the VIP list?`)) return;
@@ -1912,7 +1915,7 @@ export default function AdminPanelClient() {
 
     try {
       const supabase = createAdminClient();
-      const { id, killers, survivors, ...updateData } = playerData;
+      const { id, killers, survivors, vipTier, ...updateData } = playerData;
       updateData.username = updateData.username.trim();
 
       if (id && p100Players.find(p => p.id === id)) {
@@ -1920,6 +1923,12 @@ export default function AdminPanelClient() {
       } else {
         await supabase.from('p100_players').insert(updateData).throwOnError();
       }
+      // VIP is stored per username, not on the player row, so it is applied
+      // separately. `vipTier` is a transient field on the dialog only.
+      if (vipTier !== undefined) {
+        await setVipForUsername(updateData.username, vipTier);
+      }
+
       toast({ title: 'Success', description: 'Player saved successfully.' });
       await fetchP100Players();
       setEditingPlayer(null);
@@ -2993,7 +3002,7 @@ export default function AdminPanelClient() {
                         </div>
                     )}
                     <Table>
-                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Favorite</TableHead><TableHead className="text-white">Priority</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="border-red-600/50"><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Type</TableHead><TableHead className="text-white">P200</TableHead><TableHead className="text-white">Legacy</TableHead><TableHead className="text-white">Favorite</TableHead><TableHead className="text-white">VIP</TableHead><TableHead className="text-white">Priority</TableHead><TableHead className="text-white">Added</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {sortedPlayers.length > 0 ? sortedPlayers.map((player) => (<TableRow key={player.id} className="border-red-600/30">
                             <TableCell className="text-white font-medium">{player.username}</TableCell>
@@ -3002,6 +3011,7 @@ export default function AdminPanelClient() {
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.p200 ? 'bg-purple-600' : 'bg-gray-600'}`}>{player.p200 ? 'P200' : 'P100'}</span></TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.legacy ? 'bg-orange-600' : 'bg-gray-600'}`}>{player.legacy ? 'Legacy' : 'Standard'}</span></TableCell>
                             <TableCell><span className={`px-2 py-1 rounded text-xs text-white ${player.favorite ? 'bg-pink-600' : 'bg-gray-600'}`}>{player.favorite ? 'Favorite' : 'Standard'}</span></TableCell>
+                            <TableCell>{(() => { const t = vipTierOf(player.username); return t ? <span className="px-2 py-1 rounded text-xs bg-yellow-500 text-black font-semibold whitespace-nowrap">{'\u2605'.repeat(t === 1 ? 1 : 4)} VIP {t}</span> : <span className="px-2 py-1 rounded text-xs bg-gray-600 text-white">None</span>; })()}</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
                                 <input
@@ -3562,46 +3572,30 @@ export default function AdminPanelClient() {
                 Tier 3: spinning stars and a red aura.
               </p>
 
-              {/* Add */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-                <Input
-                  placeholder="Username (exact spelling)"
-                  value={newVipUsername}
-                  onChange={(e) => setNewVipUsername(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addVip(); }}
-                  className="bg-black border-yellow-600/60 text-white md:col-span-2"
-                />
-                <select
-                  value={newVipTier}
-                  onChange={(e) => setNewVipTier(Number(e.target.value))}
-                  className="bg-black border border-yellow-600/60 text-white rounded-md px-3 py-2 font-mono"
-                >
-                  <option value={1}>VIP 1 (one star)</option>
-                  <option value={2}>VIP 2 (four stars)</option>
-                  <option value={3}>VIP 3 (spinning + aura)</option>
-                </select>
-                <Button
-                  onClick={addVip}
-                  disabled={isAddingVip}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-black font-semibold"
-                >
-                  {isAddingVip ? 'Adding...' : 'Add VIP'}
-                </Button>
-                <Input
-                  placeholder="Reason (optional)"
-                  value={newVipReason}
-                  onChange={(e) => setNewVipReason(e.target.value)}
-                  className="bg-black border-yellow-600/60 text-white md:col-span-4"
-                />
+              <div className="bg-yellow-900/20 border border-yellow-600/40 rounded-md p-3 mb-6 text-sm text-yellow-100">
+                To make someone a VIP, go to the <strong>Players</strong> tab, find any one of
+                their P100s, press Edit and tick a VIP box. It applies to every character they
+                own. This tab is for reviewing and adjusting who is already a VIP.
               </div>
 
-              {/* Search */}
-              <Input
-                placeholder="Search VIPs..."
-                value={vipSearch}
-                onChange={(e) => setVipSearch(e.target.value)}
-                className="bg-black border-yellow-600/60 text-white mb-4"
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <Input
+                  placeholder="Search VIPs..."
+                  value={vipSearch}
+                  onChange={(e) => setVipSearch(e.target.value)}
+                  className="bg-black border-yellow-600/60 text-white"
+                />
+                <select
+                  value={vipSort}
+                  onChange={(e) => setVipSort(e.target.value as any)}
+                  className="bg-black border border-yellow-600/60 text-white rounded-md px-3 py-2 font-mono text-sm"
+                >
+                  <option value="tier_desc">Tier (highest first)</option>
+                  <option value="tier_asc">Tier (lowest first)</option>
+                  <option value="name_asc">Username (A-Z)</option>
+                  <option value="name_desc">Username (Z-A)</option>
+                </select>
+              </div>
 
               {/* List */}
               <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
@@ -3610,6 +3604,17 @@ export default function AdminPanelClient() {
                     !vipSearch.trim() ||
                     String(v.username).toLowerCase().includes(vipSearch.trim().toLowerCase())
                   )
+                  .slice()
+                  .sort((a: any, b: any) => {
+                    const an = String(a.username).toLowerCase();
+                    const bn = String(b.username).toLowerCase();
+                    switch (vipSort) {
+                      case 'tier_asc':  return a.tier - b.tier || an.localeCompare(bn);
+                      case 'name_asc':  return an.localeCompare(bn);
+                      case 'name_desc': return bn.localeCompare(an);
+                      default:          return b.tier - a.tier || an.localeCompare(bn);
+                    }
+                  })
                   .map((v: any) => (
                     <div
                       key={v.id}
@@ -3648,7 +3653,7 @@ export default function AdminPanelClient() {
 
                 {vipUsers.length === 0 && (
                   <p className="text-gray-500 text-sm text-center py-6">
-                    No VIPs yet. Add a username above.
+                    No VIPs yet. Tick a VIP box on any player in the Players tab.
                   </p>
                 )}
               </div>
@@ -3758,6 +3763,41 @@ export default function AdminPanelClient() {
                         <div className="flex items-center space-x-2"><input type="checkbox" id="p200" checked={!!editingPlayer.p200} onChange={(e) => setEditingPlayer({...editingPlayer, p200: e.target.checked})} /><Label htmlFor="p200" className="text-white">P200 Status</Label></div>
                         <div className="flex items-center space-x-2"><input type="checkbox" id="legacy" checked={!!editingPlayer.legacy} onChange={(e) => setEditingPlayer({...editingPlayer, legacy: e.target.checked})} /><Label htmlFor="legacy" className="text-white">Legacy Status</Label></div>
                         <div className="flex items-center space-x-2"><input type="checkbox" id="favorite" checked={!!editingPlayer.favorite} onChange={(e) => setEditingPlayer({...editingPlayer, favorite: e.target.checked})} /><Label htmlFor="favorite" className="text-white">Favorite Status</Label></div>
+                        <div className="pt-2 border-t border-red-900/50">
+                          <Label className="text-white block mb-2">VIP Status</Label>
+                          <p className="text-xs text-gray-500 mb-2">
+                            Applies to this username across every character they own, and to all
+                            their future submissions. Tick one, or none to remove VIP.
+                          </p>
+                          {[1, 2, 3].map((tier) => {
+                            const current = editingPlayer.vipTier !== undefined
+                              ? editingPlayer.vipTier
+                              : vipTierOf(editingPlayer.username);
+                            const labels: Record<number, string> = {
+                              1: 'VIP 1 (one star)',
+                              2: 'VIP 2 (four stars)',
+                              3: 'VIP 3 (spinning stars + red aura)',
+                            };
+                            return (
+                              <div key={tier} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id={`vip-${tier}`}
+                                  checked={current === tier}
+                                  onChange={(e) =>
+                                    setEditingPlayer({
+                                      ...editingPlayer,
+                                      vipTier: e.target.checked ? tier : null,
+                                    })
+                                  }
+                                />
+                                <Label htmlFor={`vip-${tier}`} className="text-yellow-300">
+                                  {labels[tier]}
+                                </Label>
+                              </div>
+                            );
+                          })}
+                        </div>
                         <div className="flex gap-2"><Button onClick={() => savePlayer(editingPlayer)} className="bg-green-600 hover:bg-green-700">Save</Button><Button onClick={() => setEditingPlayer(null)} variant="outline" className="border-red-600 text-white hover:bg-red-900">Cancel</Button></div>
                     </div>
                 </DialogContent>
