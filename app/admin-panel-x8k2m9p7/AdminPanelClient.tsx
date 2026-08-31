@@ -3250,7 +3250,7 @@ export default function AdminPanelClient() {
                                           toast({ 
                                             title: creditedCharacter ? 'Updated + background credit' : 'Updated', 
                                             description: creditedCharacter
-                                              ? `${selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared'} — background credit updated on ${creditedCharacter}`
+                                              ? `${selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared'}, background credit updated on ${creditedCharacter}`
                                               : (selectedArtist ? `Artist set to ${selectedArtist.name}` : 'Artist cleared')
                                           });
                                           setUpdatingArtist(null);

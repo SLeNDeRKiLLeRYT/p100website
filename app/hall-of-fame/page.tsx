@@ -41,10 +41,14 @@ export default async function HallOfFamePage({
           HALL OF FAME
         </h1>
 
-        {/* INTRO — placeholder until SLeNDeR_KiLLeR supplies the real copy */}
+        {/* Intro copy, written by SLeNDeR_KiLLeR. Reproduced verbatim. */}
         <div className="content-text max-w-3xl mx-auto mb-12 md:mb-16">
           <p className="text-base md:text-lg leading-relaxed text-center text-gray-300">
-            Intro text goes here — placeholder copy so the page can be reviewed.
+            Welcome to the Hall of Fame of the p100 Library. Here, I wanted to celebrate
+            the BIG profiles of the library, with our players owning the most registered
+            p100s out of the whole website ! I also included my p100s because... Well I
+            don&apos;t have an actual reason, I just wanted to be cool. And golden. And on
+            top of the list. Thank you for your support, and hopefully see YOU there soon !
           </p>
         </div>
 
@@ -53,7 +57,7 @@ export default async function HallOfFamePage({
         <section>
           <h2 className="text-3xl md:text-4xl font-mono text-center mb-2">MOST P100s</h2>
           <p className="text-center text-gray-400 text-sm font-mono mb-6 md:mb-8">
-            Top {LEADERBOARD_LIMIT} — tied players share a place
+            Top {LEADERBOARD_LIMIT}, tied players share a place
           </p>
           <Leaderboard data={board} />
         </section>

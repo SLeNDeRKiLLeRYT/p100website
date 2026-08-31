@@ -531,7 +531,7 @@ export default function SubmissionPage() {
             <DialogDescription className="text-gray-300 text-base pt-4">
               Your P100 submission has been received and will be reviewed by an admin.
               <br /><br />
-              You can check your submission and follow its progress on the submission status page — the button below takes you straight to yours.
+              You can check your submission and follow its progress on the submission status page. The button below takes you straight to yours.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 mt-4">

@@ -23,7 +23,7 @@ export default function CreatorShowcase({
           {username}
         </h2>
         <p className="text-center text-[rgba(212,175,55,0.75)] text-xs md:text-sm font-mono mb-6">
-          creator of the website — {portraits.length} P100{portraits.length === 1 ? '' : 's'}
+          creator of the website, {portraits.length} P100{portraits.length === 1 ? '' : 's'}
         </p>
 
         {portraits.length === 0 ? (
