@@ -11,8 +11,14 @@ export default function CreatorShowcase({
 }) {
   return (
     <section className="mb-14 md:mb-20">
-      {/* Sized to its contents and centred, rather than stretching the page. */}
-      <div className="legacy-gold-box rounded-lg px-6 py-6 md:px-10 md:py-8 backdrop-blur-sm mx-auto w-fit max-w-full">
+      {/* The whole panel is one link to her profile — she asked for a click
+          anywhere in the showcase to go there, so the portraits deliberately
+          do NOT link to their character pages here (the leaderboard still does). */}
+      <Link
+        href={`/profile/${encodeURIComponent(username)}`}
+        className="legacy-gold-box group block rounded-lg px-6 py-6 md:px-10 md:py-8 backdrop-blur-sm mx-auto w-fit max-w-full transition-transform hover:scale-[1.01]"
+        aria-label={`${username}'s profile`}
+      >
         <h2 className="legacy-gold-text text-2xl md:text-3xl font-mono text-center mb-1">
           {username}
         </h2>
@@ -25,25 +31,27 @@ export default function CreatorShowcase({
         ) : (
           <div className="flex flex-wrap justify-center gap-2 md:gap-3">
             {portraits.map((p) => (
-              <Link
+              <div
                 key={`${p.type}-${p.id}`}
-                href={`/${p.type === 'killer' ? 'killers' : 'survivors'}/${p.id}`}
                 title={p.name}
+                className="legacy-gold-portrait relative w-20 h-[107px] md:w-24 md:h-32 rounded overflow-hidden"
               >
-                <div className="legacy-gold-portrait relative w-20 h-[107px] md:w-24 md:h-32 rounded overflow-hidden">
-                  <Image
-                    src={p.imageUrl}
-                    alt={p.name}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 80px, 96px"
-                  />
-                </div>
-              </Link>
+                <Image
+                  src={p.imageUrl}
+                  alt={p.name}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 768px) 80px, 96px"
+                />
+              </div>
             ))}
           </div>
         )}
-      </div>
+
+        <p className="text-center text-[rgba(212,175,55,0.6)] text-[11px] font-mono mt-5 opacity-0 group-hover:opacity-100 transition-opacity">
+          view profile →
+        </p>
+      </Link>
     </section>
   );
 }
