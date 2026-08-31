@@ -181,6 +181,15 @@ export default function AdminPanelClient() {
   const [newBlacklistReason, setNewBlacklistReason] = useState('');
   const [newBlacklistSuper, setNewBlacklistSuper] = useState(false);
   const [isAddingToBlacklist, setIsAddingToBlacklist] = useState(false);
+
+  // --- VIP (item 15) ---
+  const [vipUsers, setVipUsers] = useState<any[]>([]);
+  const [vipSearch, setVipSearch] = useState('');
+  const [newVipUsername, setNewVipUsername] = useState('');
+  const [newVipTier, setNewVipTier] = useState<number>(1);
+  const [newVipReason, setNewVipReason] = useState('');
+  const [isAddingVip, setIsAddingVip] = useState(false);
+  const [updatingVipId, setUpdatingVipId] = useState<string | null>(null);
   
   // UI State
   const [activeTab, setActiveTab] = useState('submissions');
@@ -1288,6 +1297,91 @@ export default function AdminPanelClient() {
   }, []);
 
   // Fetch blacklisted users
+  // ===================== VIP =====================
+  const fetchVipUsers = useCallback(async () => {
+    try {
+      const supabase = createAdminClient();
+      const { data, error } = await supabase
+        .from('vip_users')
+        .select('*')
+        .order('tier', { ascending: false });
+      if (error) throw error;
+      setVipUsers(data || []);
+    } catch (e: any) {
+      console.error('Error fetching VIPs', e);
+      toast({ title: 'Error', description: 'Failed to fetch VIP list', variant: 'destructive' });
+    }
+  }, [toast]);
+
+  const addVip = useCallback(async () => {
+    if (!newVipUsername.trim()) {
+      toast({ title: 'Error', description: 'Username is required', variant: 'destructive' });
+      return;
+    }
+    setIsAddingVip(true);
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from('vip_users')
+        .insert([{
+          username: newVipUsername.trim(),
+          tier: newVipTier,
+          reason: newVipReason.trim() || null,
+          created_by: 'admin',
+        }]);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast({ title: 'Error', description: 'That player is already a VIP. Change their tier instead.', variant: 'destructive' });
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      toast({ title: 'Success', description: `${newVipUsername.trim()} added as VIP ${newVipTier}` });
+      setNewVipUsername('');
+      setNewVipTier(1);
+      setNewVipReason('');
+      await fetchVipUsers();
+    } catch (e: any) {
+      console.error('Error adding VIP', e);
+      toast({ title: 'Error', description: 'Failed to add VIP', variant: 'destructive' });
+    } finally {
+      setIsAddingVip(false);
+    }
+  }, [newVipUsername, newVipTier, newVipReason, toast, fetchVipUsers]);
+
+  const updateVipTier = useCallback(async (id: string, tier: number) => {
+    setUpdatingVipId(id);
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase.from('vip_users').update({ tier }).eq('id', id);
+      if (error) throw error;
+      setVipUsers(prev => prev.map(v => (v.id === id ? { ...v, tier } : v)));
+      toast({ title: 'Updated', description: `Tier changed to VIP ${tier}` });
+    } catch (e: any) {
+      console.error('Error updating VIP tier', e);
+      toast({ title: 'Error', description: 'Failed to change tier', variant: 'destructive' });
+    } finally {
+      setUpdatingVipId(null);
+    }
+  }, [toast]);
+
+  const removeVip = useCallback(async (id: string, username: string) => {
+    if (!confirm(`Remove ${username} from the VIP list?`)) return;
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase.from('vip_users').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Success', description: `${username} removed from VIPs` });
+      await fetchVipUsers();
+    } catch (e: any) {
+      console.error('Error removing VIP', e);
+      toast({ title: 'Error', description: 'Failed to remove VIP', variant: 'destructive' });
+    }
+  }, [toast, fetchVipUsers]);
+
   const fetchBlacklistedUsers = useCallback(async () => {
     try {
       const supabase = createAdminClient();
@@ -2394,6 +2488,7 @@ export default function AdminPanelClient() {
             <TabsTrigger value="storage-manager" className="data-[state=active]:bg-red-600" onClick={() => { if(!storageItems.length) fetchStorageItems(selectedBucket); }}>Storage</TabsTrigger>
             <TabsTrigger value="artworks" className="data-[state=active]:bg-red-600" onClick={() => { if(!artworks.length) refreshArtworks(); }}>Artworks</TabsTrigger>
             <TabsTrigger value="blacklist" className="data-[state=active]:bg-red-600" onClick={() => { if(!blacklistedUsers.length) fetchBlacklistedUsers(); }}>Blacklist</TabsTrigger>
+            <TabsTrigger value="vip" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-black" onClick={() => { if(!vipUsers.length) fetchVipUsers(); }}>VIP</TabsTrigger>
           </TabsList>
 
           <TabsContent value="submissions" className="space-y-6">
@@ -3451,6 +3546,110 @@ export default function AdminPanelClient() {
                   <div className="text-center text-gray-400 py-8">
                     No blacklisted users yet.
                   </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="vip" className="space-y-6">
+            <div className="bg-black/80 backdrop-blur-sm border border-yellow-600 rounded-lg p-6">
+              <h2 className="text-2xl font-mono mb-2 text-yellow-400">VIP Players</h2>
+              <p className="text-sm text-gray-400 mb-6">
+                VIP status applies to a username, so it covers every character that player
+                owns and every submission they make from now on. Their submissions are
+                highlighted and pinned to the top of the queue.
+                <br />
+                Tier 1: one star under the name. Tier 2: four stars in the corners.
+                Tier 3: spinning stars and a red aura.
+              </p>
+
+              {/* Add */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+                <Input
+                  placeholder="Username (exact spelling)"
+                  value={newVipUsername}
+                  onChange={(e) => setNewVipUsername(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addVip(); }}
+                  className="bg-black border-yellow-600/60 text-white md:col-span-2"
+                />
+                <select
+                  value={newVipTier}
+                  onChange={(e) => setNewVipTier(Number(e.target.value))}
+                  className="bg-black border border-yellow-600/60 text-white rounded-md px-3 py-2 font-mono"
+                >
+                  <option value={1}>VIP 1 (one star)</option>
+                  <option value={2}>VIP 2 (four stars)</option>
+                  <option value={3}>VIP 3 (spinning + aura)</option>
+                </select>
+                <Button
+                  onClick={addVip}
+                  disabled={isAddingVip}
+                  className="bg-yellow-600 hover:bg-yellow-700 text-black font-semibold"
+                >
+                  {isAddingVip ? 'Adding...' : 'Add VIP'}
+                </Button>
+                <Input
+                  placeholder="Reason (optional)"
+                  value={newVipReason}
+                  onChange={(e) => setNewVipReason(e.target.value)}
+                  className="bg-black border-yellow-600/60 text-white md:col-span-4"
+                />
+              </div>
+
+              {/* Search */}
+              <Input
+                placeholder="Search VIPs..."
+                value={vipSearch}
+                onChange={(e) => setVipSearch(e.target.value)}
+                className="bg-black border-yellow-600/60 text-white mb-4"
+              />
+
+              {/* List */}
+              <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                {vipUsers
+                  .filter((v: any) =>
+                    !vipSearch.trim() ||
+                    String(v.username).toLowerCase().includes(vipSearch.trim().toLowerCase())
+                  )
+                  .map((v: any) => (
+                    <div
+                      key={v.id}
+                      className="flex flex-wrap items-center gap-3 bg-black/60 border border-yellow-600/40 rounded-md px-3 py-2"
+                    >
+                      <span className="text-yellow-400 font-mono text-lg leading-none">
+                        {'\u2605'.repeat(v.tier === 1 ? 1 : 4)}
+                      </span>
+                      <span className="text-white font-mono flex-1 min-w-[140px] truncate">
+                        {v.username}
+                      </span>
+                      {v.reason && (
+                        <span className="text-xs text-gray-400 italic truncate max-w-[220px]">
+                          {v.reason}
+                        </span>
+                      )}
+                      <select
+                        value={v.tier}
+                        disabled={updatingVipId === v.id}
+                        onChange={(e) => updateVipTier(v.id, Number(e.target.value))}
+                        className="bg-black border border-yellow-600/60 text-white rounded px-2 py-1 text-sm font-mono"
+                      >
+                        <option value={1}>VIP 1</option>
+                        <option value={2}>VIP 2</option>
+                        <option value={3}>VIP 3</option>
+                      </select>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => removeVip(v.id, v.username)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+
+                {vipUsers.length === 0 && (
+                  <p className="text-gray-500 text-sm text-center py-6">
+                    No VIPs yet. Add a username above.
+                  </p>
                 )}
               </div>
             </div>

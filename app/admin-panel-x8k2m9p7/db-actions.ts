@@ -8,7 +8,7 @@ import { requireAdmin } from './admin-session';
 const TABLES = new Set([
   'killers', 'survivors', 'p100_players', 'p100_submissions', 'artists',
   'artworks', 'character_artworks',
-  'blacklisted_users', 'v_character_artworks',
+  'blacklisted_users', 'vip_users', 'v_character_artworks',
 ]);
 
 const BUCKETS = new Set([

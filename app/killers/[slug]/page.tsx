@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import Navigation from '@/components/ui/Navigation';
+import { VipCorners, VipInlineStar } from '@/components/VipStars';
+import { getVipMap, vipTierFor } from '@/lib/vip';
 import BackgroundWrapper from '@/components/BackgroundWrapper';
 import CharacterNavigation from '@/components/CharacterNavigation';
 import { createServerClient } from '@/lib/supabase-client';
@@ -158,6 +160,7 @@ export default async function KillerPage({ params }: { params: { slug: string } 
   }
   
   const navigation = await getCharacterNavigation(params.slug, 'killer');
+  const vipMap = await getVipMap();
 
   // Use artwork details directly from centralized database
   const galleryArtworkDetails = killerData.gallery_artworks || [];
@@ -331,7 +334,12 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                         let nameClasses = baseNameClasses;
                         let borderClasses = "group relative block bg-black/40 border border-red-600/20 rounded-md p-3 hover:border-red-500/40 hover:bg-black/60 transition-all duration-200";
                         
-                        if (player.favorite) {
+                        const vipTier = vipTierFor(vipMap, decodedUsername);
+
+                        if (vipTier === 3) {
+                          nameClasses = `${baseNameClasses} vip3-name`;
+                          borderClasses = "group relative block bg-black/40 vip3-aura rounded-md p-3 transition-all duration-200";
+                        } else if (player.favorite) {
                           nameClasses = `${baseNameClasses} favorite-glow animate-pulse`;
                           borderClasses = "group relative block bg-black/40 favorite-heart-border rounded-md p-3 hover:border-pink-400/60 hover:bg-pink-900/20 transition-all duration-200";
                         } else if (player.legacy) {
@@ -347,6 +355,7 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                               tabIndex={0}
                               title={`View P100 profile for ${decodedUsername}`}
                             >
+                              <VipCorners tier={vipTier} />
                               {player.favorite && (
                                 <div className="favorite-heart-corners">
                                   <span className="heart">♥</span>
@@ -368,8 +377,9 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                                   </div>
                                 )}
                               </div>
-                              {(player.p200 || player.legacy || player.favorite) && (
+                              {(player.p200 || player.legacy || player.favorite || vipTier === 1) && (
                                 <div className="flex items-center gap-1">
+                                  <VipInlineStar tier={vipTier} />
                                   {player.p200 && (
                                     <div className="w-5 h-5" title="P200 means a player reached P100 on the same character twice. This is a rare achievement and the players on this list deserve full credit for the time and dedication it takes to reach it.">
                                       <Image src="/p200.png" alt="P200 Achievement" width={20} height={20} className="object-contain"/>

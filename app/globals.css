@@ -385,3 +385,67 @@ body {
   border-color: rgb(240, 214, 135);
   color: rgb(250, 232, 175);
 }
+
+/* ---------------------------------------------------------------------------
+   VIP tiers (invoice item 14). Modelled on .favorite-heart-corners so the
+   two decorations sit identically on the player tiles.
+     tier 1 : one star under the name
+     tier 2 : four stars, one per corner
+     tier 3 : the same four stars spinning, plus a red aura on the name box
+   --------------------------------------------------------------------------- */
+.vip-star-inline {
+  color: rgb(255, 215, 0);
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.85);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+.vip-star-corners {
+  position: absolute;
+  inset: -12px;
+  pointer-events: none;
+  z-index: 11;
+}
+
+.vip-star-corners .vip-star {
+  position: absolute;
+  color: rgb(255, 215, 0);
+  font-size: 18px;
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.85);
+  user-select: none;
+}
+
+.vip-star-corners .vip-star:nth-child(1) { top: 0; left: 0; }
+.vip-star-corners .vip-star:nth-child(2) { top: 0; right: 0; }
+.vip-star-corners .vip-star:nth-child(3) { bottom: 0; left: 0; }
+.vip-star-corners .vip-star:nth-child(4) { bottom: 0; right: 0; }
+
+/* Tier 3 only: spin the corner stars. */
+.vip-star-corners.vip-spin .vip-star {
+  animation: vip-star-spin 4s linear infinite;
+}
+
+@keyframes vip-star-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Tier 3 only: red aura around the name box. */
+.vip3-aura {
+  border: 2px solid rgba(220, 38, 38, 0.9);
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.14), rgba(127, 29, 29, 0.14));
+  box-shadow:
+    0 0 18px rgba(220, 38, 38, 0.55),
+    0 0 44px rgba(220, 38, 38, 0.26);
+}
+
+.vip3-name {
+  color: rgb(254, 226, 226);
+  text-shadow: 0 0 10px rgba(248, 113, 113, 0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vip-star-corners.vip-spin .vip-star { animation: none; }
+}
