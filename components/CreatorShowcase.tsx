@@ -11,32 +11,32 @@ export default function CreatorShowcase({
 }) {
   return (
     <section className="mb-14 md:mb-20">
-      <div className="bg-black/50 border-2 border-red-600/60 rounded-lg p-6 md:p-8 backdrop-blur-sm">
-        <h2 className="text-2xl md:text-3xl font-mono text-center mb-1">
+      {/* Sized to its contents and centred, rather than stretching the page. */}
+      <div className="legacy-gold-box rounded-lg px-6 py-6 md:px-10 md:py-8 backdrop-blur-sm mx-auto w-fit max-w-full">
+        <h2 className="legacy-gold-text text-2xl md:text-3xl font-mono text-center mb-1">
           {username}
         </h2>
-        <p className="text-center text-red-400 text-sm font-mono mb-6">
+        <p className="text-center text-[rgba(212,175,55,0.75)] text-xs md:text-sm font-mono mb-6">
           creator of the website — {portraits.length} P100{portraits.length === 1 ? '' : 's'}
         </p>
 
         {portraits.length === 0 ? (
           <p className="text-center text-gray-400 text-sm">No P100s recorded yet.</p>
         ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3">
+          <div className="flex flex-wrap justify-center gap-2 md:gap-3">
             {portraits.map((p) => (
               <Link
                 key={`${p.type}-${p.id}`}
                 href={`/${p.type === 'killer' ? 'killers' : 'survivors'}/${p.id}`}
                 title={p.name}
-                className="group"
               >
-                <div className="relative aspect-[3/4] rounded overflow-hidden border border-red-600/40 group-hover:border-red-400 transition-colors">
+                <div className="legacy-gold-portrait relative w-20 h-[107px] md:w-24 md:h-32 rounded overflow-hidden">
                   <Image
                     src={p.imageUrl}
                     alt={p.name}
                     fill
                     className="object-cover"
-                    sizes="(max-width: 640px) 30vw, (max-width: 1024px) 12vw, 9vw"
+                    sizes="(max-width: 768px) 80px, 96px"
                   />
                 </div>
               </Link>

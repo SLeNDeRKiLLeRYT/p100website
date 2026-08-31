@@ -316,3 +316,34 @@ body {
     opacity: 1;
   }
 }
+/* ---------------------------------------------------------------------------
+   Hall of Fame — creator showcase.
+   DBD Legacy-style gold: warm gold border, soft outer glow, subtle inner sheen.
+   --------------------------------------------------------------------------- */
+.legacy-gold-box {
+  border: 2px solid rgba(212, 175, 55, 0.85);
+  background:
+    linear-gradient(180deg, rgba(212, 175, 55, 0.10) 0%, rgba(0, 0, 0, 0.55) 55%);
+  box-shadow:
+    0 0 18px rgba(212, 175, 55, 0.35),
+    0 0 48px rgba(212, 175, 55, 0.18),
+    inset 0 0 24px rgba(212, 175, 55, 0.08);
+}
+
+.legacy-gold-text {
+  color: rgb(240, 214, 135);
+  text-shadow:
+    0 0 10px rgba(212, 175, 55, 0.55),
+    0 0 22px rgba(212, 175, 55, 0.30);
+}
+
+.legacy-gold-portrait {
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.22);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.legacy-gold-portrait:hover {
+  border-color: rgba(240, 214, 135, 0.95);
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.45);
+}

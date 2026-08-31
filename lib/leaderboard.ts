@@ -9,7 +9,10 @@ export const CREATOR_USERNAME = 'SLeNDeR_KiLLeR';
 export const LEADERBOARD_LIMIT = 100;
 
 /** Portraits rendered per player before collapsing into a "+N" chip. */
-export const PORTRAITS_PER_PLAYER = 12;
+export const PORTRAITS_PER_PLAYER = 10;
+
+/** Players shown per page. Two pages at a limit of 100. */
+export const PER_PAGE = 50;
 
 export interface LeaderboardPortrait {
   id: string;
@@ -19,11 +22,22 @@ export interface LeaderboardPortrait {
 }
 
 export interface LeaderboardEntry {
+  /** Shared place — ties get the same number and the next rank skips. */
   rank: number;
+  /** 1-based row position in the whole list. Medals key off this, not rank,
+   *  so the top four ROWS always carry the four icons even when tied. */
+  position: number;
   username: string;
   p100Count: number;
   portraits: LeaderboardPortrait[];
   hiddenPortraits: number;
+}
+
+export interface LeaderboardPage {
+  entries: LeaderboardEntry[];
+  page: number;
+  totalPages: number;
+  totalPlayers: number;
 }
 
 /**
@@ -34,8 +48,20 @@ export interface LeaderboardEntry {
  * ordered alphabetically here rather than in the view so the view stays a
  * plain aggregate.
  */
-export async function getLeaderboard(limit = LEADERBOARD_LIMIT): Promise<LeaderboardEntry[]> {
+/**
+ * One page of the leaderboard.
+ *
+ * Ranks come from v_p100_leaderboard (rank(), so ties share a place and the
+ * next rank skips). Portraits are only fetched for the players on THIS page,
+ * so page size controls the image load, not the overall limit.
+ */
+export async function getLeaderboard(
+  page = 1,
+  perPage = PER_PAGE,
+  limit = LEADERBOARD_LIMIT
+): Promise<LeaderboardPage> {
   const supabase = createServerClient();
+  const empty: LeaderboardPage = { entries: [], page: 1, totalPages: 1, totalPlayers: 0 };
 
   const { data: rows, error } = await supabase
     .from('v_p100_leaderboard')
@@ -45,7 +71,7 @@ export async function getLeaderboard(limit = LEADERBOARD_LIMIT): Promise<Leaderb
 
   if (error) {
     console.error('Leaderboard query failed:', error.message);
-    return [];
+    return empty;
   }
 
   const ranked = (rows || [])
@@ -57,12 +83,14 @@ export async function getLeaderboard(limit = LEADERBOARD_LIMIT): Promise<Leaderb
     )
     .slice(0, limit);
 
-  if (ranked.length === 0) return [];
+  if (ranked.length === 0) return empty;
 
-  const usernames = ranked.map((r: any) => r.username);
+  const totalPages = Math.max(1, Math.ceil(ranked.length / perPage));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const offset = (safePage - 1) * perPage;
+  const slice = ranked.slice(offset, offset + perPage);
+  const usernames = slice.map((r: any) => r.username);
 
-  // One round-trip for every P100 belonging to the listed players, then one
-  // each for the character art. Three queries total, regardless of list size.
   const { data: players } = await supabase
     .from('p100_players')
     .select('username, killer_id, survivor_id')
@@ -97,16 +125,19 @@ export async function getLeaderboard(limit = LEADERBOARD_LIMIT): Promise<Leaderb
     byUser.set(p.username, list);
   }
 
-  return ranked.map((r: any) => {
+  const entries: LeaderboardEntry[] = slice.map((r: any, i: number) => {
     const all = (byUser.get(r.username) || []).sort((a, b) => a.name.localeCompare(b.name));
     return {
       rank: r.rank,
+      position: offset + i + 1,
       username: r.username,
       p100Count: r.p100_count,
       portraits: all.slice(0, PORTRAITS_PER_PLAYER),
       hiddenPortraits: Math.max(0, all.length - PORTRAITS_PER_PLAYER),
     };
   });
+
+  return { entries, page: safePage, totalPages, totalPlayers: ranked.length };
 }
 
 /** Every P100 belonging to the site creator, for her showcase (item 9). */

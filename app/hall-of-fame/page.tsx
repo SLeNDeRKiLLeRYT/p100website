@@ -7,6 +7,7 @@ import {
   getCreatorShowcase,
   CREATOR_USERNAME,
   LEADERBOARD_LIMIT,
+  PER_PAGE,
 } from '@/lib/leaderboard';
 
 export const dynamic = 'force-dynamic';
@@ -17,9 +18,15 @@ export const metadata = {
   description: 'The players with the most P100s in Dead by Daylight.',
 };
 
-export default async function HallOfFamePage() {
-  const [entries, creatorPortraits] = await Promise.all([
-    getLeaderboard(LEADERBOARD_LIMIT),
+export default async function HallOfFamePage({
+  searchParams,
+}: {
+  searchParams?: { page?: string };
+}) {
+  const requestedPage = Number(searchParams?.page) || 1;
+
+  const [board, creatorPortraits] = await Promise.all([
+    getLeaderboard(requestedPage, PER_PAGE, LEADERBOARD_LIMIT),
     getCreatorShowcase(),
   ]);
 
@@ -48,7 +55,7 @@ export default async function HallOfFamePage() {
           <p className="text-center text-gray-400 text-sm font-mono mb-6 md:mb-8">
             Top {LEADERBOARD_LIMIT} — tied players share a place
           </p>
-          <Leaderboard entries={entries} />
+          <Leaderboard data={board} />
         </section>
       </main>
     </BackgroundWrapper>
