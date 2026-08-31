@@ -403,7 +403,7 @@ body {
 
 .vip-star-corners {
   position: absolute;
-  inset: -12px;
+  inset: -8px;
   pointer-events: none;
   z-index: 11;
 }
@@ -411,7 +411,7 @@ body {
 .vip-star-corners .vip-star {
   position: absolute;
   color: rgb(255, 215, 0);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   text-shadow: 0 0 12px rgba(255, 215, 0, 0.85);
   user-select: none;
@@ -448,4 +448,17 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .vip-star-corners.vip-spin .vip-star { animation: none; }
+}
+
+/* Tier 2: gold frame so it reads as a clear step up from tier 1, which is
+   only a single star in the badge row. */
+.vip2-frame {
+  border: 2px solid rgba(255, 215, 0, 0.75);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.10), rgba(202, 138, 4, 0.10));
+  box-shadow: 0 0 16px rgba(255, 215, 0, 0.30);
+}
+
+.vip2-name {
+  color: rgb(254, 240, 190);
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.65);
 }

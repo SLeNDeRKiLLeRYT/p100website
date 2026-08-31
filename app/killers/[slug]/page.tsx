@@ -339,6 +339,9 @@ export default async function KillerPage({ params }: { params: { slug: string } 
                         if (vipTier === 3) {
                           nameClasses = `${baseNameClasses} vip3-name`;
                           borderClasses = "group relative block bg-black/40 vip3-aura rounded-md p-3 transition-all duration-200";
+                        } else if (vipTier === 2) {
+                          nameClasses = `${baseNameClasses} vip2-name`;
+                          borderClasses = "group relative block bg-black/40 vip2-frame rounded-md p-3 transition-all duration-200";
                         } else if (player.favorite) {
                           nameClasses = `${baseNameClasses} favorite-glow animate-pulse`;
                           borderClasses = "group relative block bg-black/40 favorite-heart-border rounded-md p-3 hover:border-pink-400/60 hover:bg-pink-900/20 transition-all duration-200";
