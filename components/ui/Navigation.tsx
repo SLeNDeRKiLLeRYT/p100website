@@ -39,7 +39,7 @@ export default function Navigation({ hideHome, hideKillers, hideSurvivors, hideC
       )}
       
       {!hideHallOfFame && (
-        <Link href="/hall-of-fame" className={`nav-button ${pathname === "/hall-of-fame" ? "active" : ""}`}>
+        <Link href="/hall-of-fame" className={`nav-button nav-button-gold ${pathname === "/hall-of-fame" ? "active" : ""}`}>
           HALL OF FAME
         </Link>
       )}

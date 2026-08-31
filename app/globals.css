@@ -347,3 +347,41 @@ body {
   border-color: rgba(240, 214, 135, 0.95);
   box-shadow: 0 0 16px rgba(212, 175, 55, 0.45);
 }
+
+/* Gold variants of the nav buttons, for Hall of Fame — matches the legacy
+   gold used by the creator showcase. Overrides the red border/text only;
+   sizing and spacing still come from .nav-button / .nav-button-large. */
+.nav-button.nav-button-gold {
+  border-color: rgba(212, 175, 55, 0.85);
+  color: rgb(240, 214, 135);
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.35);
+}
+
+.nav-button.nav-button-gold:hover {
+  background-color: rgba(212, 175, 55, 0.14);
+  border-color: rgb(240, 214, 135);
+  color: rgb(250, 232, 175);
+}
+
+.nav-button.nav-button-gold.active {
+  background-color: rgba(212, 175, 55, 0.22);
+  border-color: rgb(240, 214, 135);
+  color: rgb(250, 232, 175);
+}
+
+.nav-button-large.nav-button-gold {
+  background-image: none;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-color: rgba(212, 175, 55, 0.85);
+  color: rgb(240, 214, 135);
+  text-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+  box-shadow:
+    0 10px 30px rgba(212, 175, 55, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.nav-button-large.nav-button-gold:hover {
+  background-color: rgba(212, 175, 55, 0.16);
+  border-color: rgb(240, 214, 135);
+  color: rgb(250, 232, 175);
+}

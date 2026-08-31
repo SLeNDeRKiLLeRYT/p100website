@@ -79,7 +79,7 @@ export default function Home() {
               </Tabs>
 
               <div className="text-center mt-6">
-                <Link href="/hall-of-fame" className="nav-button-large inline-block rounded-lg">
+                <Link href="/hall-of-fame" className="nav-button-large nav-button-gold inline-block rounded-lg">
                   🏆 HALL OF FAME
                 </Link>
               </div>
