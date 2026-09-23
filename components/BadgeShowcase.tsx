@@ -22,54 +22,44 @@ interface BadgeDemo {
   vipTier: VipTier | null;
 }
 
-const BADGES: BadgeDemo[] = [
+interface BadgeSlide {
+  key: string;
+  label: string;
+  badges: BadgeDemo[];
+}
+
+const plain = {
+  p200: false,
+  legacy: false,
+  favorite: false,
+  vipTier: null as VipTier | null,
+};
+
+// The three VIP tiers share a slide so they can be compared side by side.
+const SLIDES: BadgeSlide[] = [
   {
     key: 'legacy',
     label: 'Legacy',
-    p200: false,
-    legacy: true,
-    favorite: false,
-    vipTier: null,
+    badges: [{ ...plain, key: 'legacy', label: 'Legacy', legacy: true }],
   },
   {
     key: 'p200',
     label: 'P200',
-    p200: true,
-    legacy: false,
-    favorite: false,
-    vipTier: null,
+    badges: [{ ...plain, key: 'p200', label: 'P200', p200: true }],
   },
   {
     key: 'heart',
     label: 'Heart',
-    p200: false,
-    legacy: false,
-    favorite: true,
-    vipTier: null,
+    badges: [{ ...plain, key: 'heart', label: 'Heart', favorite: true }],
   },
   {
-    key: 'vip1',
-    label: 'Star',
-    p200: false,
-    legacy: false,
-    favorite: false,
-    vipTier: 1,
-  },
-  {
-    key: 'vip2',
-    label: 'Gold stars',
-    p200: false,
-    legacy: false,
-    favorite: false,
-    vipTier: 2,
-  },
-  {
-    key: 'vip3',
-    label: 'Spinning stars',
-    p200: false,
-    legacy: false,
-    favorite: false,
-    vipTier: 3,
+    key: 'vip',
+    label: 'VIP',
+    badges: [
+      { ...plain, key: 'vip1', label: 'VIP 1', vipTier: 1 },
+      { ...plain, key: 'vip2', label: 'VIP 2', vipTier: 2 },
+      { ...plain, key: 'vip3', label: 'VIP 3', vipTier: 3 },
+    ],
   },
 ];
 
@@ -151,10 +141,10 @@ function DemoTile({ demo }: { demo: BadgeDemo }) {
 
 export default function BadgeShowcase() {
   const [index, setIndex] = useState(0);
-  const demo = BADGES[index];
+  const slide = SLIDES[index];
 
   const step = (by: number) =>
-    setIndex((i) => (i + by + BADGES.length) % BADGES.length);
+    setIndex((i) => (i + by + SLIDES.length) % SLIDES.length);
 
   return (
     <div className="border border-red-600/20 rounded-lg bg-black/30 p-5 md:p-6">
@@ -162,40 +152,41 @@ export default function BadgeShowcase() {
         Example player, use the arrows to see each badge
       </p>
 
-      <div className="flex items-center justify-center gap-4 md:gap-6">
+      <div className="flex items-center justify-center gap-3 md:gap-5">
         <button
           type="button"
           onClick={() => step(-1)}
           aria-label="Previous badge"
-          className="font-mono text-2xl text-gray-400 hover:text-white px-3 py-2 border border-red-600/20 rounded-md hover:border-red-500/50 transition-colors"
+          className="shrink-0 font-mono text-2xl text-gray-400 hover:text-white px-3 py-2 border border-red-600/20 rounded-md hover:border-red-500/50 transition-colors"
         >
           &lsaquo;
         </button>
 
-        <div className="w-[190px] py-4 flex items-center justify-center">
-          <div className="w-[160px]">
-            <DemoTile demo={demo} />
-          </div>
+        <div className="flex-1 flex flex-wrap items-start justify-center gap-5 md:gap-7 py-4 min-h-[140px]">
+          {slide.badges.map((badge) => (
+            <div key={badge.key} className="w-[150px]">
+              <DemoTile demo={badge} />
+              <p className="mt-3 text-center font-mono text-sm text-gray-200">
+                {badge.label}
+              </p>
+            </div>
+          ))}
         </div>
 
         <button
           type="button"
           onClick={() => step(1)}
           aria-label="Next badge"
-          className="font-mono text-2xl text-gray-400 hover:text-white px-3 py-2 border border-red-600/20 rounded-md hover:border-red-500/50 transition-colors"
+          className="shrink-0 font-mono text-2xl text-gray-400 hover:text-white px-3 py-2 border border-red-600/20 rounded-md hover:border-red-500/50 transition-colors"
         >
           &rsaquo;
         </button>
       </div>
 
-      <div className="mt-5 text-center">
-        <p className="font-mono text-base text-gray-200">{demo.label}</p>
-      </div>
-
       <div className="mt-5 flex flex-wrap justify-center gap-2">
-        {BADGES.map((b, i) => (
+        {SLIDES.map((sl, i) => (
           <button
-            key={b.key}
+            key={sl.key}
             type="button"
             onClick={() => setIndex(i)}
             aria-current={i === index}
@@ -205,7 +196,7 @@ export default function BadgeShowcase() {
                 : 'border-red-600/20 text-gray-400 hover:text-white hover:border-red-500/40'
             }`}
           >
-            {b.label}
+            {sl.label}
           </button>
         ))}
       </div>
