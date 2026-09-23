@@ -74,9 +74,6 @@ function DemoTile({ demo }: { demo: BadgeDemo }) {
   if (demo.vipTier === 3) {
     nameClasses = `${baseNameClasses} vip3-name`;
     borderClasses = 'relative block bg-black/40 vip3-aura rounded-md p-3';
-  } else if (demo.vipTier === 2) {
-    nameClasses = `${baseNameClasses} vip2-name`;
-    borderClasses = 'relative block bg-black/40 vip2-frame rounded-md p-3';
   } else if (demo.favorite) {
     nameClasses = `${baseNameClasses} favorite-glow animate-pulse`;
     borderClasses =
