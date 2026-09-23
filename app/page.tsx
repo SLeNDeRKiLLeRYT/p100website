@@ -3,6 +3,7 @@ import Navigation from "@/components/ui/Navigation";
 import BackgroundWrapper from "@/components/BackgroundWrapper";
 import RecentP100s from "@/components/RecentP100s";
 import HighlightOfTheDay from "@/components/HighlightOfTheDay";
+import BadgeShowcase from "@/components/BadgeShowcase";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Home() {
@@ -105,31 +106,55 @@ export default function Home() {
                   <div>
                     <p className="faq-question">- When was this website created?</p>
                     <p className="faq-answer">
-                      I got the idea to create this at the end of 2024, when it was the trend on Twitter to do P100 lists for specific characters
+                      I got the idea to create this at the end of 2024, when it was the trend on Twitter to do P100 lists for specific characters, and noticed that most characters didn&apos;t have a list for them, so I wanted to make a place where everyone could show off their beloved p100s
                     </p>
                   </div>
-                  
+
                   <div>
                     <p className="faq-question">- Where can I find the credits for any artwork visible on the website?</p>
                     <p className="faq-answer">
-                      For each artwork, I made sure to place the name below, and the link, either by clicking on it, or right below, with the name when it was not possible
+                      For each artwork, I made sure to place the name below, and the link, either by clicking on it, or right below, with the name when it was not possible.
                     </p>
                   </div>
-                  
+
                   <div>
                     <p className="faq-question">- Can I help with the website?</p>
                     <p className="faq-answer">
-                      I accept donations <a href="https://streamelements.com/slender_kill3r/tip" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">HERE</a>, however the best (and free !) thing you can do, would be to share the website so we can reach more players and add more p100s on the list &lt;3 any p100 added is a victory !
+                      The best thing you could do, would be to share the website so we can reach more players and add more p100s on the list &lt;3 any p100 added is a victory ! You can also financially support the website monthly cost <a href="https://streamelements.com/slender_kill3r/tip" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">here</a> ! Any support and donation will go directly toward the website &lt;3
                     </p>
                   </div>
-                  
+
                   <div>
                     <p className="faq-question">- Are lists ordered in any particular way?</p>
                     <p className="faq-answer">
                       No, I am not trying to start a competition by ordering the lists by date, and some things are impossible to prove. It&apos;s easier this way.
                       <br className="hidden sm:block" />
-                      First come, first added
+                      First come, first added. With exceptions.
                     </p>
+                  </div>
+
+                  <div>
+                    <p className="faq-question">- What do the icons on some players names mean?</p>
+                    <p className="faq-answer">
+                      We have icons for special members of our lovely community &lt;3
+                    </p>
+                    <ul className="faq-answer list-disc pl-6 space-y-3 mt-3">
+                      <li>
+                        The p200 icon is here for people that get a character p100 on 2 DIFFERENT accounts. To submit for that badge you need to join the Discord.
+                      </li>
+                      <li>
+                        The different star icons are for really kind people that chose to support the website financially. I am really grateful for each and all of those that donate, it helps with the monthly cost of the website as well as funding updates. Thank you !
+                      </li>
+                      <li>
+                        The heart icon is for the best dbd player of all time, this is not debatable &lt;3
+                      </li>
+                      <li>
+                        The legacy icon some names have is for players owning the legacy outfits that were available in the old prestige system ! Please <a href="https://discord.gg/GFPuzehJZs" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300 font-bold underline transition-colors">join the discord</a> to request it !
+                      </li>
+                    </ul>
+                    <div className="mt-6">
+                      <BadgeShowcase />
+                    </div>
                   </div>
                 </div>
               </div>
