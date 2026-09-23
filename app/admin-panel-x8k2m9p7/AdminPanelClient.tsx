@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import supabase, { sanitizeInput, validateInput } from '@/lib/supabase-client';
 import { createAdminClient } from '@/lib/admin-proxy';
+import HeaderSlotPicker from './HeaderSlotPicker';
 import { adminLogin, adminLogout, adminSessionActive } from './auth-actions';
 import React from 'react';
 // You will need to export updateArtist from your service file
@@ -184,6 +185,9 @@ export default function AdminPanelClient() {
 
   // --- VIP (item 15) ---
   const [vipUsers, setVipUsers] = useState<any[]>([]);
+  // Pending submissions from VIP players, fetched separately so they show at
+  // the top of the queue even when they sit on a later page (item 16).
+  const [vipSubmissions, setVipSubmissions] = useState<Submission[]>([]);
   const [vipSearch, setVipSearch] = useState('');
   const [updatingVipId, setUpdatingVipId] = useState<string | null>(null);
   const [vipSort, setVipSort] = useState<'tier_desc' | 'tier_asc' | 'name_asc' | 'name_desc'>('tier_desc');
@@ -587,11 +591,6 @@ export default function AdminPanelClient() {
     placement: 'gallery'
   });
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
-
-  // Keep the VIP list loaded so the per-player tickboxes show current state.
-  useEffect(() => {
-    if (isAuthenticated) void fetchVipUsers();
-  }, [isAuthenticated, fetchVipUsers]);
 
   // Initial Auth Check and Data Fetch
   useEffect(() => {
@@ -1338,6 +1337,69 @@ export default function AdminPanelClient() {
     return hit ? Number(hit.tier) : null;
   }, [vipUsers]);
 
+  // Keep the VIP list loaded so the per-player tickboxes show current state.
+  useEffect(() => {
+    if (isAuthenticated) void fetchVipUsers();
+  }, [isAuthenticated, fetchVipUsers]);
+
+  /**
+   * Pending submissions belonging to VIP players (item 16).
+   *
+   * The main queue is paginated, so a VIP submission could be buried on page
+   * three. This pulls them out with their own query and the table renders them
+   * above everything else, highlighted, with the main list de-duplicated.
+   * Usernames are matched on a few spellings because submissions store what the
+   * submitter typed, including HTML-escaped angle brackets.
+   */
+  const fetchVipPendingSubmissions = useCallback(async () => {
+    if (!vipUsers.length) { setVipSubmissions([]); return; }
+    const variants = new Set<string>();
+    for (const v of vipUsers) {
+      const n = String(v.username || '').trim();
+      if (!n) continue;
+      variants.add(n);
+      variants.add(n.toLowerCase());
+      variants.add(n.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+    }
+    try {
+      let q = supabase
+        .from('p100_submissions')
+        .select('id, username, killer_id, survivor_id, screenshot_url, status, rejection_reason, submitted_at, reviewed_at, reviewed_by, comment, legacy')
+        .eq('status', 'pending')
+        .in('username', Array.from(variants));
+      if (filter === 'killer') {
+        q = q.not('killer_id', 'is', null);
+      } else if (filter === 'survivor') {
+        q = q.not('survivor_id', 'is', null);
+      }
+      const { data, error } = await q.order('submitted_at', { ascending: true }).limit(200);
+      if (error) throw error;
+      setVipSubmissions((data || []) as Submission[]);
+    } catch (e) {
+      console.error('Failed to fetch VIP submissions:', e);
+      setVipSubmissions([]);
+    }
+  }, [vipUsers, filter]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void fetchVipPendingSubmissions();
+  }, [isAuthenticated, fetchVipPendingSubmissions]);
+
+  /** VIP rows to pin above the queue, honouring the search box. */
+  const pinnedVipSubmissions = useMemo(() => {
+    if (statusFilter !== 'all' && statusFilter !== 'pending') return [];
+    const term = submissionSearch.trim().toLowerCase();
+    return vipSubmissions.filter(s => !term || s.username.toLowerCase().includes(term));
+  }, [vipSubmissions, statusFilter, submissionSearch]);
+
+  /** The normal queue, minus anything already pinned above it. */
+  const visibleSubmissions = useMemo(() => {
+    const pinnedIds = new Set(pinnedVipSubmissions.map(s => s.id));
+    const term = submissionSearch.trim().toLowerCase();
+    return submissions.filter(s => !pinnedIds.has(s.id) && (!term || s.username.toLowerCase().includes(term)));
+  }, [submissions, pinnedVipSubmissions, submissionSearch]);
+
   /**
    * Set or clear VIP for a username. VIP lives on the username, so this is what
    * the per-player tickboxes call: ticking on any one of that player's rows
@@ -1621,7 +1683,7 @@ export default function AdminPanelClient() {
   const updateSubmissionStatus = async (id: string, status: 'approved' | 'rejected', rejectionReason?: string) => {
     try {
       const supabase = createAdminClient();
-      const submission = submissions.find(s => s.id === id);
+      const submission = submissions.find(s => s.id === id) || vipSubmissions.find(s => s.id === id);
       if (!submission) return;
 
       const safeRejectionReason = rejectionReason ? sanitizeComment(rejectionReason) : null;
@@ -1652,6 +1714,7 @@ export default function AdminPanelClient() {
       }
       toast({ title: 'Success', description: `Submission ${status}.` });
       await fetchSubmissions(true);
+      await fetchVipPendingSubmissions();
       await fetchSubmissionStats();
       await fetchP100Players();
     } catch (error) {
@@ -2477,6 +2540,140 @@ export default function AdminPanelClient() {
     );
   }
 
+  /**
+   * One submission row. Shared by the pinned VIP block and the normal queue so
+   * the two can never drift apart (item 16).
+   */
+  const renderSubmissionRow = (submission: Submission, isVip: boolean) => (
+                      <TableRow key={submission.id} className={isVip ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20" : "border-red-600/20"}>
+                        <TableCell className="w-10">
+                          {submission.status === 'pending' ? (
+                            <input type="checkbox" className="w-4 h-4 accent-red-600" checked={selectedSubmissions.has(submission.id)} onChange={() => toggleSubmissionSelection(submission.id)} />
+                          ) : <span />}
+                        </TableCell>
+                        <TableCell className="text-white">
+                          {editingSubmissionUsername === submission.id ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={editingSubmissionValue}
+                                onChange={(e) => setEditingSubmissionValue(e.target.value)}
+                                className="bg-black border-red-600 text-white h-8"
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 h-8"
+                                onClick={async () => {
+                                  const newName = editingSubmissionValue.trim();
+                                  if (!newName) { toast({ title: 'Validation', description: 'Username cannot be empty.', variant: 'destructive' }); return; }
+                                  try {
+                                    const supabase = createAdminClient();
+                                    const { error } = await supabase.from('p100_submissions').update({ username: newName }).eq('id', submission.id);
+                                    if (error) throw error;
+                                    toast({ title: 'Updated', description: 'Username updated.' });
+                                    // reflect locally
+                                    setSubmissions(prev => prev.map(p => p.id === submission.id ? { ...p, username: newName } : p));
+                                    setEditingSubmissionUsername(null);
+                                    setEditingSubmissionValue('');
+                                  } catch (err) {
+                                    console.error(err);
+                                    toast({ title: 'Error', description: 'Failed to update username.', variant: 'destructive' });
+                                  }
+                                }}
+                              >Save</Button>
+                              <Button size="sm" variant="outline" className="h-8 border-red-600 text-white" onClick={() => { setEditingSubmissionUsername(null); setEditingSubmissionValue(''); }}>Cancel</Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {/* Decode legacy stored HTML entities (&lt; &gt;) so hearts like <3 render properly */}
+                              <span>{submission.username.replace(/&lt;/g, '<').replace(/&gt;/g, '>')}</span>
+                              {isVip && (
+                                <span className="px-2 py-0.5 rounded text-[10px] bg-yellow-500 text-black font-semibold whitespace-nowrap">VIP</span>
+                              )}
+                              {submission.status === 'pending' && (
+                                <Button size="icon" variant="outline" className="h-6 w-6 border-blue-600 text-blue-400" onClick={() => { setEditingSubmissionUsername(submission.id); setEditingSubmissionValue(submission.username); }}>
+                                  <Pencil size={12} />
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-white">{getCharacterName(submission)}</TableCell>
+                        <TableCell className="text-white">{new Date(submission.submitted_at).toLocaleDateString()}</TableCell>
+                        <TableCell><span className={`px-2 py-1 rounded text-sm ${submission.status === 'pending' ? 'bg-yellow-600 text-black' : submission.status === 'approved' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{submission.status}</span></TableCell>
+                        <TableCell>
+                          {submission.screenshot_url ? (
+                            <a href={submission.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">View</a>
+                          ) : (
+                            <span className="text-gray-500">None</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {submission.comment ? (
+                            <div className="text-gray-300 text-sm">
+                              {submission.comment.length > 25 ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate max-w-[120px]" title={submission.comment}>
+                                    {submission.comment.substring(0, 25)}...
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="p-1 h-6 w-6 text-blue-400 hover:text-blue-300"
+                                    onClick={() => setCommentToShow({ id: submission.id, comment: submission.comment || '' })}
+                                  >
+                                    <Eye size={12} />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span>{submission.comment}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-500 text-sm">None</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {submission.status === 'pending' && (
+                              <>
+                                <Button size="sm" onClick={() => updateSubmissionStatus(submission.id, 'approved')} className="bg-green-600 hover:bg-green-700">Approve</Button>
+                                <Dialog>
+                                  <DialogTrigger asChild><Button size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700">Reject</Button></DialogTrigger>
+                                  <DialogContent className="bg-black border-red-600">
+                                    <DialogHeader><DialogTitle className="text-white">Reject Submission</DialogTitle></DialogHeader>
+                                    <div className="space-y-4">
+                                      {submission.comment && (
+                                        <div className="bg-blue-900/20 border border-blue-500 rounded p-3">
+                                          <Label className="text-blue-300 text-sm font-semibold">Submitter's Comment:</Label>
+                                          <p className="text-white text-sm mt-1">{submission.comment}</p>
+                                        </div>
+                                      )}
+                                      <Label className="text-white">Rejection Reason (Optional)</Label>
+                                      <Input id={`rejection-${submission.id}`} placeholder="Enter reason..." className="bg-black border-red-600 text-white" />
+                                      <Button onClick={() => { const reason = (document.getElementById(`rejection-${submission.id}`) as HTMLInputElement).value; updateSubmissionStatus(submission.id, 'rejected', reason); }} className="bg-red-600 hover:bg-red-700 w-full">Confirm Rejection</Button>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              </>
+                            )}
+                            {(submission.status === 'approved' || submission.status === 'rejected') && submission.screenshot_url && (
+                                <Button 
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 hover:text-yellow-300"
+                                    onClick={() => handleDeleteSubmissionScreenshot(submission)}
+                                    disabled={deletingScreenshotId === submission.id}
+                                >
+                                  {deletingScreenshotId === submission.id ? 'Deleting...' : 'Delete IMG'}
+                                </Button>
+                            )}
+                            {submission.status === 'rejected' && submission.rejection_reason && <div className="text-sm text-gray-400">Reason: {submission.rejection_reason}</div>}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+  );
+
   return (
     <BackgroundWrapper backgroundUrl="/admin.png">
       <Navigation />
@@ -2605,138 +2802,19 @@ export default function AdminPanelClient() {
                 <div className="mb-4 text-sm text-gray-400">
                   Showing {submissions.length} of {filteredSubmissionsCount} submissions
                 </div>
+                {pinnedVipSubmissions.length > 0 && (
+                  <div className="mb-4 text-sm text-yellow-300 border border-yellow-600/50 bg-yellow-500/10 rounded px-3 py-2">
+                    {pinnedVipSubmissions.length} VIP submission{pinnedVipSubmissions.length === 1 ? '' : 's'} pinned to the top of the list below.
+                  </div>
+                )}
                 <Table>
                   <TableHeader><TableRow className="border-red-600"><TableHead className="text-white w-10"><input type="checkbox" className="w-4 h-4 accent-red-600" checked={submissions.filter(s => s.status === 'pending' && (!submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))).length > 0 && submissions.filter(s => s.status === 'pending' && (!submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))).every(s => selectedSubmissions.has(s.id))} onChange={(e) => { const pendingIds = submissions.filter(s => s.status === 'pending' && (!submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))).map(s => s.id); if (e.target.checked) { setSelectedSubmissions(prev => { const next = new Set(prev); pendingIds.forEach(id => next.add(id)); return next; }); } else { setSelectedSubmissions(prev => { const next = new Set(prev); pendingIds.forEach(id => next.delete(id)); return next; }); } }} /></TableHead><TableHead className="text-white">Username</TableHead><TableHead className="text-white">Character</TableHead><TableHead className="text-white">Date</TableHead><TableHead className="text-white">Status</TableHead><TableHead className="text-white">Screenshot</TableHead><TableHead className="text-white">Comment</TableHead><TableHead className="text-white">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {submissions.length > 0 ? submissions
-                      .filter(s => !submissionSearch || s.username.toLowerCase().includes(submissionSearch.toLowerCase()))
-                      .map((submission) => (
-                      <TableRow key={submission.id} className="border-red-600/20">
-                        <TableCell className="w-10">
-                          {submission.status === 'pending' ? (
-                            <input type="checkbox" className="w-4 h-4 accent-red-600" checked={selectedSubmissions.has(submission.id)} onChange={() => toggleSubmissionSelection(submission.id)} />
-                          ) : <span />}
-                        </TableCell>
-                        <TableCell className="text-white">
-                          {editingSubmissionUsername === submission.id ? (
-                            <div className="flex items-center gap-2">
-                              <Input
-                                value={editingSubmissionValue}
-                                onChange={(e) => setEditingSubmissionValue(e.target.value)}
-                                className="bg-black border-red-600 text-white h-8"
-                                autoFocus
-                              />
-                              <Button
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700 h-8"
-                                onClick={async () => {
-                                  const newName = editingSubmissionValue.trim();
-                                  if (!newName) { toast({ title: 'Validation', description: 'Username cannot be empty.', variant: 'destructive' }); return; }
-                                  try {
-                                    const supabase = createAdminClient();
-                                    const { error } = await supabase.from('p100_submissions').update({ username: newName }).eq('id', submission.id);
-                                    if (error) throw error;
-                                    toast({ title: 'Updated', description: 'Username updated.' });
-                                    // reflect locally
-                                    setSubmissions(prev => prev.map(p => p.id === submission.id ? { ...p, username: newName } : p));
-                                    setEditingSubmissionUsername(null);
-                                    setEditingSubmissionValue('');
-                                  } catch (err) {
-                                    console.error(err);
-                                    toast({ title: 'Error', description: 'Failed to update username.', variant: 'destructive' });
-                                  }
-                                }}
-                              >Save</Button>
-                              <Button size="sm" variant="outline" className="h-8 border-red-600 text-white" onClick={() => { setEditingSubmissionUsername(null); setEditingSubmissionValue(''); }}>Cancel</Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              {/* Decode legacy stored HTML entities (&lt; &gt;) so hearts like <3 render properly */}
-                              <span>{submission.username.replace(/&lt;/g, '<').replace(/&gt;/g, '>')}</span>
-                              {submission.status === 'pending' && (
-                                <Button size="icon" variant="outline" className="h-6 w-6 border-blue-600 text-blue-400" onClick={() => { setEditingSubmissionUsername(submission.id); setEditingSubmissionValue(submission.username); }}>
-                                  <Pencil size={12} />
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-white">{getCharacterName(submission)}</TableCell>
-                        <TableCell className="text-white">{new Date(submission.submitted_at).toLocaleDateString()}</TableCell>
-                        <TableCell><span className={`px-2 py-1 rounded text-sm ${submission.status === 'pending' ? 'bg-yellow-600 text-black' : submission.status === 'approved' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{submission.status}</span></TableCell>
-                        <TableCell>
-                          {submission.screenshot_url ? (
-                            <a href={submission.screenshot_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">View</a>
-                          ) : (
-                            <span className="text-gray-500">None</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          {submission.comment ? (
-                            <div className="text-gray-300 text-sm">
-                              {submission.comment.length > 25 ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="truncate max-w-[120px]" title={submission.comment}>
-                                    {submission.comment.substring(0, 25)}...
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="p-1 h-6 w-6 text-blue-400 hover:text-blue-300"
-                                    onClick={() => setCommentToShow({ id: submission.id, comment: submission.comment || '' })}
-                                  >
-                                    <Eye size={12} />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <span>{submission.comment}</span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-500 text-sm">None</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {submission.status === 'pending' && (
-                              <>
-                                <Button size="sm" onClick={() => updateSubmissionStatus(submission.id, 'approved')} className="bg-green-600 hover:bg-green-700">Approve</Button>
-                                <Dialog>
-                                  <DialogTrigger asChild><Button size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700">Reject</Button></DialogTrigger>
-                                  <DialogContent className="bg-black border-red-600">
-                                    <DialogHeader><DialogTitle className="text-white">Reject Submission</DialogTitle></DialogHeader>
-                                    <div className="space-y-4">
-                                      {submission.comment && (
-                                        <div className="bg-blue-900/20 border border-blue-500 rounded p-3">
-                                          <Label className="text-blue-300 text-sm font-semibold">Submitter's Comment:</Label>
-                                          <p className="text-white text-sm mt-1">{submission.comment}</p>
-                                        </div>
-                                      )}
-                                      <Label className="text-white">Rejection Reason (Optional)</Label>
-                                      <Input id={`rejection-${submission.id}`} placeholder="Enter reason..." className="bg-black border-red-600 text-white" />
-                                      <Button onClick={() => { const reason = (document.getElementById(`rejection-${submission.id}`) as HTMLInputElement).value; updateSubmissionStatus(submission.id, 'rejected', reason); }} className="bg-red-600 hover:bg-red-700 w-full">Confirm Rejection</Button>
-                                    </div>
-                                  </DialogContent>
-                                </Dialog>
-                              </>
-                            )}
-                            {(submission.status === 'approved' || submission.status === 'rejected') && submission.screenshot_url && (
-                                <Button 
-                                    size="sm"
-                                    variant="outline"
-                                    className="border-yellow-600 text-yellow-400 hover:bg-yellow-900/50 hover:text-yellow-300"
-                                    onClick={() => handleDeleteSubmissionScreenshot(submission)}
-                                    disabled={deletingScreenshotId === submission.id}
-                                >
-                                  {deletingScreenshotId === submission.id ? 'Deleting...' : 'Delete IMG'}
-                                </Button>
-                            )}
-                            {submission.status === 'rejected' && submission.rejection_reason && <div className="text-sm text-gray-400">Reason: {submission.rejection_reason}</div>}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )) : (
-                      <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-8">No submissions found for the selected filters.</TableCell></TableRow>
+                    {pinnedVipSubmissions.map((submission) => renderSubmissionRow(submission, true))}
+                    {visibleSubmissions.length > 0
+                      ? visibleSubmissions.map((submission) => renderSubmissionRow(submission, vipTierOf(submission.username) !== null))
+                      : pinnedVipSubmissions.length === 0 && (
+                      <TableRow><TableCell colSpan={8} className="text-center text-gray-400 py-8">No submissions found for the selected filters.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -3687,6 +3765,7 @@ export default function AdminPanelClient() {
                         </div>
                         <div><Label className="text-white">Artist URLs</Label><Button onClick={() => openFilePicker('multiple', 'artist_urls', 'killer')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Artist URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingKiller.artist_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'artist_urls', 'killer')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
                         <div><Label className="text-white">Legacy Header URLs</Label><Button onClick={() => openFilePicker('multiple', 'legacy_header_urls', 'killer')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Legacy URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingKiller.legacy_header_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'legacy_header_urls', 'killer')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
+                        <HeaderSlotPicker characterId={editingKiller.id} characterType="killer" artworks={editingKiller._artworks} onSaved={fetchAllCharacters} />
                         <div><Label className="text-white">Order</Label><Input type="number" value={editingKiller.order || 0} onChange={(e) => setEditingKiller({...editingKiller, order: parseInt(e.target.value)})} className="bg-black border-red-600 text-white"/></div>
                     </div>
                     <div className="flex-shrink-0 pt-4 border-t border-red-600/50">
@@ -3721,6 +3800,7 @@ export default function AdminPanelClient() {
                         </div>
                         <div><Label className="text-white">Artist URLs</Label><Button onClick={() => openFilePicker('multiple', 'artist_urls', 'survivor')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Artist URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingSurvivor.artist_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'artist_urls', 'survivor')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
                         <div><Label className="text-white">Legacy Header URLs</Label><Button onClick={() => openFilePicker('multiple', 'legacy_header_urls', 'survivor')} className="bg-blue-600 hover:bg-blue-700 w-full mb-2" type="button">Add Legacy URLs</Button><div className="max-h-32 overflow-y-auto space-y-1 rounded border border-red-800 p-2 bg-black/50">{(editingSurvivor.legacy_header_urls || []).map((url: string, i: number) => <div key={i} className="flex items-center gap-2 text-sm text-gray-300"><span className="truncate flex-1">{url}</span><Button onClick={() => removeUrlFromField(url, 'legacy_header_urls', 'survivor')} size="sm" variant="destructive" className="h-6 w-6 p-0">X</Button></div>)}</div></div>
+                        <HeaderSlotPicker characterId={editingSurvivor.id} characterType="survivor" artworks={editingSurvivor._artworks} onSaved={fetchAllCharacters} />
                         <div><Label className="text-white">Order</Label><Input type="number" value={editingSurvivor.order_num || 0} onChange={(e) => setEditingSurvivor({...editingSurvivor, order_num: parseInt(e.target.value)})} className="bg-black border-red-600 text-white"/></div>
                     </div>
                      <div className="flex-shrink-0 pt-4 border-t border-red-600/50">
