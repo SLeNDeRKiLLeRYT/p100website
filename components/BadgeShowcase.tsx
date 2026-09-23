@@ -11,7 +11,7 @@ import Image from 'next/image';
 import { VipCorners, VipInlineStar } from '@/components/VipStars';
 import type { VipTier } from '@/lib/vip';
 
-const EXAMPLE_USERNAME = 'princegridd';
+const EXAMPLE_USERNAME = 'SLeNDeR_KiLLeR';
 
 interface BadgeDemo {
   key: string;
