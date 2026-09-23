@@ -16,7 +16,6 @@ const EXAMPLE_USERNAME = 'princegridd';
 interface BadgeDemo {
   key: string;
   label: string;
-  blurb: string;
   p200: boolean;
   legacy: boolean;
   favorite: boolean;
@@ -27,8 +26,6 @@ const BADGES: BadgeDemo[] = [
   {
     key: 'legacy',
     label: 'Legacy',
-    blurb:
-      'For players owning the legacy outfits that were available in the old prestige system. Join the Discord to request it.',
     p200: false,
     legacy: true,
     favorite: false,
@@ -37,8 +34,6 @@ const BADGES: BadgeDemo[] = [
   {
     key: 'p200',
     label: 'P200',
-    blurb:
-      'For people that get a character p100 on 2 DIFFERENT accounts. To submit for that badge you need to join the Discord.',
     p200: true,
     legacy: false,
     favorite: false,
@@ -47,7 +42,6 @@ const BADGES: BadgeDemo[] = [
   {
     key: 'heart',
     label: 'Heart',
-    blurb: 'For the best dbd player of all time, this is not debatable <3',
     p200: false,
     legacy: false,
     favorite: true,
@@ -56,8 +50,6 @@ const BADGES: BadgeDemo[] = [
   {
     key: 'vip1',
     label: 'Star',
-    blurb:
-      'For the really kind people that chose to support the website financially. One star under the name.',
     p200: false,
     legacy: false,
     favorite: false,
@@ -66,7 +58,6 @@ const BADGES: BadgeDemo[] = [
   {
     key: 'vip2',
     label: 'Gold stars',
-    blurb: 'A star in each corner, and a gold frame around the name.',
     p200: false,
     legacy: false,
     favorite: false,
@@ -75,7 +66,6 @@ const BADGES: BadgeDemo[] = [
   {
     key: 'vip3',
     label: 'Spinning stars',
-    blurb: 'The four stars spin, and the name sits inside a red glow.',
     p200: false,
     legacy: false,
     favorite: false,
@@ -198,11 +188,8 @@ export default function BadgeShowcase() {
         </button>
       </div>
 
-      <div className="mt-5 text-center min-h-[72px]">
-        <p className="font-mono text-base text-gray-200 mb-2">{demo.label}</p>
-        <p className="font-mono text-sm text-gray-400 leading-relaxed max-w-md mx-auto">
-          {demo.blurb}
-        </p>
+      <div className="mt-5 text-center">
+        <p className="font-mono text-base text-gray-200">{demo.label}</p>
       </div>
 
       <div className="mt-5 flex flex-wrap justify-center gap-2">
